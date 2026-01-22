@@ -1,0 +1,207 @@
+version: '3.8'
+
+services:
+  # ==================== 基础设施 ====================
+  
+  # PostgreSQL 数据库（用于 User 和 Order 服务）
+  postgres:
+    image: postgres:15-alpine
+    container_name: uyou-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sh:/docker-entrypoint-initdb.d/init.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uyou-network
+
+  # MongoDB 数据库（用于 Feed 服务）
+  mongodb:
+    image: mongo:7
+    container_name: uyou-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uyou-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: uyou-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uyou-network
+
+  # etcd（APISIX 配置中心）
+  etcd:
+    image: bitnami/etcd:3.5
+    container_name: uyou-etcd
+    environment:
+      ETCD_ENABLE_V2: "true"
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_ADVERTISE_CLIENT_URLS: "http://etcd:2379"
+      ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
+    ports:
+      - "2379:2379"
+    volumes:
+      - etcd_data:/bitnami/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uyou-network
+
+  # ==================== 微服务 ====================
+
+  # User Service
+  user-service:
+    build:
+      context: ./services/user
+      dockerfile: Dockerfile
+    container_name: uyou-user-service
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: userdb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Order Service
+  order-service:
+    build:
+      context: ./services/order
+      dockerfile: Dockerfile
+    container_name: uyou-order-service
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: orderdb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "50052:50052"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Feed Service
+  feed-service:
+    build:
+      context: ./services/feed
+      dockerfile: Dockerfile
+    container_name: uyou-feed-service
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USER: root
+      MONGO_PASSWORD: example
+      MONGO_DATABASE: feeddb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "50053:50053"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # ==================== API Gateway ====================
+
+  # Apache APISIX
+  apisix:
+    image: apache/apisix:3.8.0-debian
+    container_name: uyou-apisix
+    volumes:
+      - ./apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./apisix/config/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+    ports:
+      - "9080:9080"   # HTTP
+      - "9443:9443"   # HTTPS
+      - "9180:9180"   # Admin API
+    depends_on:
+      etcd:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      feed-service:
+        condition: service_started
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # APISIX Dashboard（可选）
+  apisix-dashboard:
+    image: apache/apisix-dashboard:3.0.1-alpine
+    container_name: uyou-apisix-dashboard
+    environment:
+      APISIX_API_URL: http://apisix:9180/apisix/admin
+    ports:
+      - "9000:9000"
+    depends_on:
+      - apisix
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+networks:
+  uyou-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  etcd_data:
