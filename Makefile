@@ -1,4 +1,4 @@
-.PHONY: proto clean build run stop
+.PHONY: proto proto-update update-apisix clean build run stop restart logs
 
 # 生成 Proto 文件
 proto:
@@ -15,6 +15,16 @@ proto:
 		proto/feed.proto
 	@echo "Protobuf files generated successfully!"
 
+# 更新 APISIX 路由配置（从 proto 文件自动读取）
+update-apisix:
+	@echo "Updating APISIX routes and proto definitions..."
+	@./scripts/init-apisix-routes.sh
+	@echo "APISIX configuration updated!"
+
+# 完整的 Proto 更新流程：生成代码 + 更新 APISIX 配置
+proto-update: proto update-apisix
+	@echo "Proto update complete! Restart services with: make restart"
+
 # 构建所有服务
 build:
 	@echo "Building services..."
@@ -26,7 +36,7 @@ build:
 # 启动所有服务
 run:
 	@echo "Starting all services with Docker Compose..."
-	docker-compose up -d
+	docker compose up -d
 	@echo "All services started!"
 	@echo "APISIX Dashboard: http://localhost:9000"
 	@echo "APISIX Gateway: http://localhost:9080"
@@ -34,7 +44,7 @@ run:
 # 停止所有服务
 stop:
 	@echo "Stopping all services..."
-	docker-compose down
+	docker compose down
 	@echo "All services stopped!"
 
 # 清理生成的文件
@@ -46,7 +56,7 @@ clean:
 
 # 查看日志
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 # 重启服务
 restart: stop run

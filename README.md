@@ -206,18 +206,183 @@ RegisterRequest {
 
 ## 🔧 开发指南
 
+### Protobuf 基础知识
+
+#### 字段编号（Field Numbers）
+
+在 protobuf 中，每个字段都有一个唯一的编号，例如：
+
+```protobuf
+message CreateFeedRequest {
+  int64 user_id = 1;      // 字段编号 1
+  string content = 2;     // 字段编号 2
+  repeated string images = 3;  // 字段编号 3
+  string location = 4;    // 字段编号 4
+}
+```
+
+**字段编号的作用：**
+
+1. **二进制编码标识**：protobuf 在序列化时使用编号而不是字段名，这样更高效
+   - 二进制数据中，`user_id` 用数字 `1` 表示，而不是字符串 `"user_id"`
+   - 这大大减小了数据体积，提高了传输效率
+
+2. **版本兼容性**：添加新字段时不会破坏旧代码
+   ```protobuf
+   // 旧版本
+   message CreateFeedRequest {
+     int64 user_id = 1;
+     string content = 2;
+   }
+   
+   // 新版本（添加新字段）
+   message CreateFeedRequest {
+     int64 user_id = 1;      // 保持不变
+     string content = 2;      // 保持不变
+     string location = 3;     // 新字段，使用新编号
+   }
+   ```
+   旧代码可以忽略新字段，新代码可以处理旧数据，实现向后兼容。
+
+3. **字段顺序无关**：编号决定了字段在二进制中的位置，而不是定义顺序
+
+**重要规则：**
+
+- ✅ **每个 message 内唯一**：同一个 message 内的字段编号不能重复
+- ✅ **不同 message 可重复**：不同 message 可以使用相同的编号
+- ⚠️ **一旦使用不要随意更改**：更改编号会导致数据不兼容
+- ✅ **编号范围**：1-536870911（19000-19999 保留，不可用）
+
+**最佳实践：**
+
+1. **从 1 开始，按顺序递增**：保持编号连续，便于维护
+2. **预留一些编号**：如果删除字段，可以暂时保留编号，避免立即复用
+3. **不要随意更改已使用的编号**：这会导致数据不兼容
+
+**实际示例：**
+
+```protobuf
+message CreateFeedRequest {
+  int64 user_id = 1;      // 在二进制编码中用 "1" 标识
+  string content = 2;     // 在二进制编码中用 "2" 标识
+  repeated string images = 3;  // 在二进制编码中用 "3" 标识
+  string location = 4;    // 在二进制编码中用 "4" 标识
+}
+```
+
+在 Go 代码中使用时：
+```go
+req := &pb.CreateFeedRequest{
+    UserId:   123,           // 对应编号 1
+    Content:  "Hello",       // 对应编号 2
+    Images:   []string{"..."}, // 对应编号 3
+    Location: "Beijing",     // 对应编号 4
+}
+```
+
+**总结：**
+- `= 1, 2, 3, 4` 是字段的**唯一标识符**，用于二进制编码
+- 不是字段的顺序，而是字段的**身份标识**
+- 一旦定义，**不要随意更改**
+- 不同 message 可以使用相同的编号
+
 ### 修改 Proto 定义
 
 1. 编辑 `proto/*.proto` 文件
-2. 重新生成代码：
+2. 自动生成代码并更新 APISIX 配置：
    ```bash
-   make proto
+   make proto-update
    ```
-3. 更新 `apisix/config/apisix.yaml` 中的 proto 定义
-4. 重启服务：
+   这个命令会自动：
+   - 生成 Go 代码到各服务的 `proto/` 目录
+   - 从 proto 文件读取并更新 APISIX 的 proto 定义和路由配置
+3. 重启服务：
    ```bash
    make restart
    ```
+
+**注意：** 如果只需要更新 APISIX 配置（不重新生成代码），可以运行：
+```bash
+make update-apisix
+```
+
+#### 添加新的 RPC 方法
+
+当你在 proto 文件中添加新的 RPC 方法时，需要手动在路由配置脚本中添加对应的路由。
+
+**示例：添加 `DeleteUser` RPC 方法**
+
+1. **在 `proto/user.proto` 中添加新的 RPC 方法：**
+   ```protobuf
+   service UserService {
+     // ... 现有的方法 ...
+     
+     // 删除用户（新添加的）
+     rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+   }
+   
+   // 添加对应的 message
+   message DeleteUserRequest {
+     int64 user_id = 1;
+   }
+   
+   message DeleteUserResponse {
+     bool success = 1;
+     string message = 2;
+   }
+   ```
+
+2. **在 `scripts/init-apisix-routes.sh` 中添加路由配置：**
+   
+   找到对应的服务路由部分（例如 User Service），添加新的路由：
+   ```bash
+   # 创建 User Service 路由
+   echo -e "\n创建 User Service 路由..."
+   create_route "user-register" "/api/v1/users/register" "POST" "user-service:50051" "1" "user.UserService" "Register"
+   create_route "user-login" "/api/v1/users/login" "POST" "user-service:50051" "1" "user.UserService" "Login"
+   create_wildcard_route "user-get" "/api/v1/users/*" "GET" "user-service:50051" "1" "user.UserService" "GetUser"
+   # 👇 新添加的路由
+   create_route "user-delete" "/api/v1/users/delete" "DELETE" "user-service:50051" "1" "user.UserService" "DeleteUser"
+   ```
+   
+   **路由参数说明：**
+   - `"user-delete"`：路由名称（唯一标识）
+   - `"/api/v1/users/delete"`：HTTP 路径
+   - `"DELETE"`：HTTP 方法（GET/POST/PUT/DELETE）
+   - `"user-service:50051"`：后端服务地址和端口
+   - `"1"`：proto ID（User Service 是 1，Order Service 是 2，Feed Service 是 3）
+   - `"user.UserService"`：proto 中的服务名（格式：`package.Service`）
+   - `"DeleteUser"`：RPC 方法名
+
+3. **运行更新命令：**
+   ```bash
+   make proto-update
+   ```
+   
+   这会自动：
+   - ✅ 生成 Go 代码（包含新的 `DeleteUser` 方法）
+   - ✅ 更新 APISIX 的 proto 定义（自动从 proto 文件读取）
+   - ✅ 创建新的路由配置（通过脚本中的 `create_route` 调用）
+
+4. **在 Go 服务中实现该方法：**
+   
+   在 `services/user/main.go` 中实现 `DeleteUser` 方法：
+   ```go
+   func (s *server) DeleteUser(ctx context.Context, req *pb.DeleteUserRequest) (*pb.DeleteUserResponse, error) {
+       // 实现删除用户的逻辑
+       // ...
+       return &pb.DeleteUserResponse{
+           Success: true,
+           Message: "User deleted successfully",
+       }, nil
+   }
+   ```
+
+**总结：**
+- ✅ Proto 定义更新：**自动**（从 proto 文件读取）
+- ⚠️ 路由配置：**手动**（需要在脚本中添加 `create_route` 调用）
+- ✅ Go 代码生成：**自动**（`make proto` 会生成）
+- ⚠️ 业务逻辑实现：**手动**（在 Go 代码中实现）
 
 ### 添加新的微服务
 

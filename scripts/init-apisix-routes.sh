@@ -165,136 +165,22 @@ PYTHON_SCRIPT
     fi
 }
 
-# 创建临时 proto 文件
-TEMP_DIR=$(mktemp -d)
+# 从 proto 文件读取并创建 Proto 定义
+# 获取脚本所在目录的父目录（项目根目录）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROTO_DIR="${PROJECT_ROOT}/proto"
 
-# Proto 1: User Service
-cat > "${TEMP_DIR}/proto1.proto" <<'PROTO1_EOF'
-syntax = "proto3";
-package user;
-service UserService {
-  rpc Register(RegisterRequest) returns (RegisterResponse);
-  rpc Login(LoginRequest) returns (LoginResponse);
-  rpc GetUser(GetUserRequest) returns (GetUserResponse);
-  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
-}
-message RegisterRequest {
-  string username = 1;
-  string email = 2;
-  string password = 3;
-}
-message RegisterResponse {
-  int64 user_id = 1;
-  string message = 2;
-}
-message LoginRequest {
-  string username = 1;
-  string password = 2;
-}
-message LoginResponse {
-  string token = 1;
-  int64 user_id = 2;
-  string username = 3;
-}
-message GetUserRequest {
-  int64 user_id = 1;
-}
-message GetUserResponse {
-  int64 user_id = 1;
-  string username = 2;
-  string email = 3;
-  string avatar = 4;
-  string created_at = 5;
-}
-message UpdateUserRequest {
-  int64 user_id = 1;
-  string email = 2;
-  string avatar = 3;
-}
-message UpdateUserResponse {
-  bool success = 1;
-  string message = 2;
-}
-PROTO1_EOF
+# 检查 proto 文件是否存在
+if [ ! -f "${PROTO_DIR}/user.proto" ]; then
+    echo "错误: 找不到 ${PROTO_DIR}/user.proto"
+    exit 1
+fi
 
-# Proto 2: Order Service
-cat > "${TEMP_DIR}/proto2.proto" <<'PROTO2_EOF'
-syntax = "proto3";
-package order;
-service OrderService {
-  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
-  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
-}
-message OrderItem {
-  int64 product_id = 1;
-  string product_name = 2;
-  int32 quantity = 3;
-  double price = 4;
-}
-message CreateOrderRequest {
-  int64 user_id = 1;
-  repeated OrderItem items = 2;
-  double total_amount = 3;
-}
-message CreateOrderResponse {
-  int64 order_id = 1;
-  string order_no = 2;
-  string message = 3;
-}
-message GetOrderRequest {
-  int64 order_id = 1;
-}
-message GetOrderResponse {
-  int64 order_id = 1;
-  string order_no = 2;
-  int64 user_id = 3;
-  repeated OrderItem items = 4;
-  double total_amount = 5;
-  string status = 6;
-  string created_at = 7;
-}
-PROTO2_EOF
-
-# Proto 3: Feed Service
-cat > "${TEMP_DIR}/proto3.proto" <<'PROTO3_EOF'
-syntax = "proto3";
-package feed;
-service FeedService {
-  rpc CreateFeed(CreateFeedRequest) returns (CreateFeedResponse);
-  rpc GetFeed(GetFeedRequest) returns (GetFeedResponse);
-}
-message CreateFeedRequest {
-  int64 user_id = 1;
-  string content = 2;
-  repeated string images = 3;
-  string location = 4;
-}
-message CreateFeedResponse {
-  string feed_id = 1;
-  string message = 2;
-}
-message GetFeedRequest {
-  string feed_id = 1;
-}
-message GetFeedResponse {
-  string feed_id = 1;
-  int64 user_id = 2;
-  string content = 3;
-  repeated string images = 4;
-  string location = 5;
-  int32 likes = 6;
-  int32 comments = 7;
-  string created_at = 8;
-}
-PROTO3_EOF
-
-# 创建 Proto 定义
-create_proto "1" "${TEMP_DIR}/proto1.proto"
-create_proto "2" "${TEMP_DIR}/proto2.proto"
-create_proto "3" "${TEMP_DIR}/proto3.proto"
-
-# 清理临时文件
-rm -rf "$TEMP_DIR"
+# 创建 Proto 定义（直接从 proto 文件读取）
+create_proto "1" "${PROTO_DIR}/user.proto"
+create_proto "2" "${PROTO_DIR}/order.proto"
+create_proto "3" "${PROTO_DIR}/feed.proto"
 
 echo "Proto 定义创建完成"
 
