@@ -10,10 +10,13 @@ git clone https://github.com/yeegeek/uyou-Infrastructure.git
 cd uyou-Infrastructure
 
 # 启动所有服务
-docker-compose up -d
+docker compose up -d
 
 # 等待服务启动完成（约 1-2 分钟）
-docker-compose ps
+docker compose ps
+
+# 初始化 APISIX 路由配置（重要！）
+./scripts/init-apisix-routes.sh
 ```
 
 ### 步骤 2: 测试用户服务 (1分钟)
@@ -90,7 +93,7 @@ curl -X POST http://localhost:9080/api/v1/feeds \
 ## 停止服务
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ## 常见问题
@@ -99,7 +102,7 @@ docker-compose down
 A: 检查端口是否被占用，确保 9080、50051-50053 端口可用
 
 **Q: API 返回 502 错误？**
-A: 等待服务完全启动，运行 `docker-compose ps` 确认所有服务状态为 healthy
+A: 等待服务完全启动，运行 `docker compose ps` 确认所有服务状态为 healthy
 
 **Q: 如何查看日志？**
-A: 运行 `docker-compose logs -f` 查看所有服务日志
+A: 运行 `docker compose logs -f` 查看所有服务日志

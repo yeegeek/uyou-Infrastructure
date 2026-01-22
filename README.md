@@ -86,7 +86,7 @@ uyou-Infrastructure/
 
 ```bash
 # 使用 Docker Compose 启动
-docker-compose up -d
+docker compose up -d
 
 # 或使用 Makefile
 make run
@@ -95,7 +95,7 @@ make run
 ### 2. 查看服务状态
 
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 预期输出：
@@ -234,7 +234,7 @@ RegisterRequest {
 
 ```bash
 # 启动基础设施（数据库、Redis、etcd）
-docker-compose up -d postgres mongodb redis etcd
+docker compose up -d postgres mongodb redis etcd
 
 # 本地运行服务
 cd services/user
@@ -249,11 +249,11 @@ go run main.go
 
 ```bash
 # 查看所有服务日志
-docker-compose logs -f
+docker compose logs -f
 
 # 查看特定服务日志
-docker-compose logs -f user-service
-docker-compose logs -f apisix
+docker compose logs -f user-service
+docker compose logs -f apisix
 ```
 
 ### 查看 APISIX 访问日志
@@ -365,14 +365,14 @@ MONGO_PASSWORD=your-secure-password
 
 2. 查看服务日志：
    ```bash
-   docker-compose logs user-service
+   docker compose logs user-service
    ```
 
 ### 数据库连接失败
 
 1. 检查数据库健康状态：
    ```bash
-   docker-compose ps postgres
+   docker compose ps postgres
    ```
 
 2. 手动连接测试：
@@ -389,7 +389,7 @@ MONGO_PASSWORD=your-secure-password
 
 2. 重启 APISIX：
    ```bash
-   docker-compose restart apisix
+   docker compose restart apisix
    ```
 
 ## 📖 学习资源

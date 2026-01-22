@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
-	pb "github.com/yeegeek/uyou-Infrastructure/services/order/proto"
+	pb "github.com/yeegeek/uyou-Infrastructure/services/order/proto/proto"
 )
 
 type server struct {

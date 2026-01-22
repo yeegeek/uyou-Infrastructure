@@ -6,15 +6,17 @@ WORKDIR /build
 # 安装依赖
 RUN apk add --no-cache git protobuf-dev
 
-# 复制 go.mod 和 go.sum
-COPY go.mod go.sum ./
+# 复制 go.mod 和 go.sum（如果存在）
+COPY go.mod go.sum* ./
+
+# 下载依赖
 RUN go mod download
 
-# 复制源代码
+# 复制源代码（包括 proto 包）
 COPY . .
 
-# 构建二进制文件
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o feed-service .
+# 构建二进制文件（使用 -mod=mod 允许自动更新依赖）
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=mod -a -installsuffix cgo -o feed-service .
 
 # 运行阶段
 FROM alpine:latest

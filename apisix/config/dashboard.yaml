@@ -1,0 +1,26 @@
+conf:
+  listen:
+    host: 0.0.0.0
+    port: 9000
+
+  etcd:
+    endpoints:
+      - http://etcd:2379
+    prefix: /apisix
+    timeout: 30
+
+  security:
+    access_control_allow_origin: "*"
+    access_control_allow_credentials: true
+    x_frame_options: "deny"
+    content_security_policy: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src *;"
+    x_content_type_options: "nosniff"
+    x_xss_protection: "1; mode=block"
+    referrer_policy: "no-referrer-when-downgrade"
+
+authentication:
+  secret: edd1c9f034335f136f87ad84b625c8f1
+  expire_time: 3600
+  users:
+    - username: admin
+      password: admin

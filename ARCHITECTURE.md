@@ -129,7 +129,7 @@ uyou-Infrastructure/
 
 ### 开发环境
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 生产环境
