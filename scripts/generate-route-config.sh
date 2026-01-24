@@ -89,28 +89,39 @@ extract_service_info() {
     local proto_file=$1
     
     if command -v python3 &> /dev/null; then
-        python3 <<PYTHON_SCRIPT
+        # 使用临时 Python 脚本文件，避免引号转义问题
+        local tmp_script=$(mktemp)
+        cat > "$tmp_script" <<'PYTHON_SCRIPT'
 import re
+import sys
 
-service_name = None
-methods = []
+proto_file = sys.argv[1]
 
-with open("$proto_file", "r") as f:
-    content = f.read()
+try:
+    with open(proto_file, 'r') as f:
+        content = f.read()
     
     # 提取 service 名称
+    service_name = None
     service_match = re.search(r'service\s+(\w+)\s*{', content)
     if service_match:
         service_name = service_match.group(1)
     
     # 提取 rpc 方法
+    methods = []
     rpc_pattern = r'rpc\s+(\w+)\s*\([^)]+\)\s+returns\s+\([^)]+\)'
     methods = re.findall(rpc_pattern, content)
-
-print(f"SERVICE_NAME={service_name}")
-for i, method in enumerate(methods, 1):
-    print(f"METHOD_{i}={method}")
+    
+    if service_name:
+        print(f'SERVICE_NAME={service_name}')
+    for i, method in enumerate(methods, 1):
+        print(f'METHOD_{i}={method}')
+except Exception as e:
+    print(f'错误: {e}', file=sys.stderr)
+    sys.exit(1)
 PYTHON_SCRIPT
+        python3 "$tmp_script" "$proto_file"
+        rm -f "$tmp_script"
     else
         # 简单的 grep 方式（不够准确，但可用）
         echo "SERVICE_NAME=$(grep -oP 'service\s+\K\w+' "$proto_file" | head -1)"
@@ -152,13 +163,16 @@ generate_route_config() {
             http_method="DELETE"
             ;;
         *)
-            uri="${API_PREFIX}/${method_name,,}"
+            # 将方法名转换为小写（兼容性处理）
+            method_name_lower=$(echo "$method_name" | tr '[:upper:]' '[:lower:]')
+            uri="${API_PREFIX}/${method_name_lower}"
             http_method="POST"
             ;;
     esac
     
-    # 生成路由名称
-    local route_name="${SERVICE_NAME}-${method_name,,}"
+    # 生成路由名称（将方法名转换为小写）
+    local method_name_lower=$(echo "$method_name" | tr '[:upper:]' '[:lower:]')
+    local route_name="${SERVICE_NAME}-${method_name_lower}"
     
     # 生成 YAML 配置
     cat <<EOF
@@ -173,7 +187,7 @@ generate_route_config() {
     plugins:
       grpc-transcode:
         proto_id: "${PROTO_ID}"
-        service: ${SERVICE_PACKAGE}.${SERVICE_NAME^}Service
+        service: ${SERVICE_PACKAGE}.$(echo "$SERVICE_NAME" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')Service
         method: ${method_name}
         show_status_in_body: true
         pb_option: ["enum_as_name", "int64_as_number", "auto_default_values"]
@@ -190,27 +204,44 @@ main() {
     
     # 提取服务信息
     local service_info=$(extract_service_info "$PROTO_FILE")
-    eval "$service_info"
     
-    if [ -z "$SERVICE_NAME" ]; then
-        echo "错误: 无法从 proto 文件提取服务名称"
+    # 安全地解析提取的信息
+    local extracted_service_name=""
+    local methods=()
+    
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^SERVICE_NAME=(.+)$ ]]; then
+            extracted_service_name="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^METHOD_([0-9]+)=(.+)$ ]]; then
+            local method_num="${BASH_REMATCH[1]}"
+            local method_name="${BASH_REMATCH[2]}"
+            methods+=("$method_name")
+        fi
+    done <<< "$service_info"
+    
+    if [ -z "$extracted_service_name" ] && [ ${#methods[@]} -eq 0 ]; then
+        echo "错误: 无法从 proto 文件提取服务信息"
+        echo "提取的输出: $service_info"
         exit 1
     fi
     
     # 生成配置文件
     local output_file="${OUTPUT_DIR}/${SERVICE_NAME}-routes.yaml"
     
+    # 首字母大写（兼容性处理）
+    SERVICE_NAME_CAPITALIZED=$(echo "$SERVICE_NAME" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')
+    
     {
-        echo "# ${SERVICE_NAME^} Service 路由配置"
+        echo "# ${SERVICE_NAME_CAPITALIZED} Service 路由配置"
         echo "# 自动生成于: $(date)"
         echo "# Proto 文件: $PROTO_FILE"
+        echo "# 注意: 这是自动生成的模板，请根据实际需求手动调整"
         echo ""
         echo "routes:"
         
         # 为每个方法生成路由
         local method_num=1
-        while eval [ -n "\${METHOD_${method_num}:-}" ]; do
-            local method_name=$(eval echo "\$METHOD_${method_num}")
+        for method_name in "${methods[@]}"; do
             generate_route_config "$method_name" "$method_num"
             ((method_num++))
         done
@@ -218,9 +249,13 @@ main() {
     
     echo -e "${GREEN}✓ 配置已生成: ${output_file}${NC}"
     echo ""
+    echo "⚠ 注意: 这是自动生成的模板配置，可能不够准确"
+    echo "   请根据实际 proto 定义和业务需求手动调整路由配置"
+    echo ""
     echo "下一步:"
     echo "  1. 检查生成的配置: cat ${output_file}"
-    echo "  2. 合并并部署: ./scripts/merge-apisix-configs.sh"
+    echo "  2. 手动调整路由配置（URI、方法映射等）"
+    echo "  3. 合并并部署: make update-apisix-merge"
 }
 
 main "$@"

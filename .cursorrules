@@ -1,0 +1,337 @@
+# uyou-Infrastructure Cursor Rules
+
+## 📋 项目概述
+
+**uyou-Infrastructure** 是一个 API Gateway 基础设施仓库，采用多仓库微服务架构。
+
+**核心技术栈：**
+- API Gateway: Apache APISIX 3.8.0 (etcd 配置)
+- 微服务: Go 1.21+
+- 通信: gRPC + REST to gRPC 转码
+- 数据库: PostgreSQL 15 + MongoDB 7
+- 缓存: Redis 7
+- 配置中心: etcd 3.5.10
+- 容器: Docker + Docker Compose
+
+---
+
+## 🎯 架构原则
+
+### 1. API Gateway 集中管理
+- 网关仓库集中管理所有路由配置
+- 微服务仓库独立开发和部署
+- 配置文件版本化管理
+
+### 2. 配置即代码
+- 所有配置存储在 Git
+- 通过脚本自动部署到 APISIX
+- 配置变更完全可追溯
+
+### 3. 协议转码
+- 客户端发送 REST/JSON 请求
+- APISIX 通过 `grpc-transcode` 插件转换为 gRPC
+- 后端返回 gRPC，转换为 JSON 响应
+
+### 4. 核心概念
+- **etcd**: APISIX 的配置中心，存储路由、Proto、插件配置
+- **repeated**: Protobuf 中的数组关键字 (Go: `[]type`)
+- **Admin API**: 动态配置更新的接口 (Port 9180)
+- **Proto ID**: 在 etcd 中的 Proto 定义的唯一标识
+
+---
+
+## 📁 关键文件说明
+
+### 配置管理
+- `apisix/config/config.yaml` - APISIX 主配置（使用 etcd）
+- `apisix/config/routes/` - 微服务路由片段
+  - `user-routes.yaml` - 用户服务路由
+  - `order-routes.yaml` - 订单服务路由
+  - `feed-routes.yaml` - 动态服务路由
+
+### 脚本工具
+- `scripts/merge-apisix-configs.sh` - 合并路由配置并部署到 APISIX
+- `scripts/validate-config.sh` - 验证 YAML 配置
+- `scripts/init-postgres.sh` - PostgreSQL 初始化
+
+### 文档
+- `README.md` - 完整的学习框架和参考文档
+- `docs/PROTO-EXPLANATION.md` - Proto 文件详解
+- `apisix/config/routes/README.md` - 路由配置说明
+
+### 编排和构建
+- `docker-compose.yml` - 所有服务编排
+- `Makefile` - 常用命令快捷方式
+
+---
+
+## 🚀 常见工作流
+
+### 快速启动
+```bash
+docker compose up -d              # 启动所有服务
+make update-apisix-merge          # 部署路由配置
+curl http://localhost:9080/...    # 测试 API
+```
+
+### 修改路由配置
+```bash
+# 编辑配置文件
+vim apisix/config/routes/user-routes.yaml
+
+# 部署配置
+make update-apisix-merge
+
+# 验证配置
+make validate-config
+```
+
+### 添加新路由
+1. 编辑 `apisix/config/routes/{service}-routes.yaml`
+2. 添加新的 route 定义
+3. 运行 `make update-apisix-merge`
+4. 测试 API: `curl http://localhost:9080/api/v1/.../...`
+
+### 查看 APISIX 状态
+```bash
+# 查看所有路由
+curl http://localhost:9180/apisix/admin/routes \
+  -H "X-API-KEY: edd1c9f034335f136f87ad84b625c8f1"
+
+# 查看 Proto 定义
+curl http://localhost:9180/apisix/admin/protos \
+  -H "X-API-KEY: edd1c9f034335f136f87ad84b625c8f1"
+
+# 查看 etcd 数据
+docker compose exec etcd etcdctl get --prefix /apisix
+```
+
+---
+
+## 🔧 开发指南
+
+### 要素 1：gRPC 转码配置
+每个路由必须配置 `grpc-transcode` 插件：
+```yaml
+plugins:
+  grpc-transcode:
+    proto_id: "1"           # Proto 定义 ID（在 etcd 中）
+    service: "user.UserService"   # Protobuf service 名称
+    method: "Register"      # RPC 方法名称
+```
+
+### 要素 2：Proto ID 管理
+- 每个服务有一个 Proto ID（目前：User=1, Order=2, Feed=3）
+- Proto 定义通过 Admin API 上传到 etcd
+- 脚本 `merge-apisix-configs.sh` 自动处理
+
+### 要素 3：服务地址
+- 本地开发: `service-name:port`（Docker 网络）
+- 生产环境: `service.namespace.svc.cluster.local:port`（K8s）
+
+### 要素 4：CORS 配置
+大多数路由都启用 CORS：
+```yaml
+plugins:
+  cors:
+    allow_origins: "*"
+    allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+    allow_headers: "*"
+```
+
+---
+
+## 📊 服务信息速查
+
+| 服务 | 端口 | 数据库 | Proto ID |
+|------|------|--------|---------|
+| User Service | 50051 | PostgreSQL | 1 |
+| Order Service | 50052 | PostgreSQL | 2 |
+| Feed Service | 50053 | MongoDB | 3 |
+
+| 地址 | 用途 |
+|------|------|
+| http://localhost:9080 | APISIX Gateway (客户端) |
+| http://localhost:9180 | APISIX Admin API |
+| localhost:5432 | PostgreSQL |
+| localhost:27017 | MongoDB |
+| localhost:6379 | Redis |
+| localhost:2379 | etcd |
+
+---
+
+## ⚠️ 常见错误
+
+### 错误 1：路由返回 404
+**原因：** 配置未部署或路由不匹配
+**解决：**
+```bash
+make update-apisix-merge  # 重新部署
+# 检查路由是否存在
+curl http://localhost:9180/apisix/admin/routes \
+  -H "X-API-KEY: edd1c9f034335f136f87ad84b625c8f1"
+```
+
+### 错误 2：gRPC 连接失败
+**原因：** 微服务未启动或地址错误
+**解决：**
+```bash
+docker compose ps                    # 检查服务状态
+docker compose logs user-service     # 查看日志
+docker compose restart user-service  # 重启服务
+```
+
+### 错误 3：配置部署超时
+**原因：** APISIX 还未启动，etcd 不可用
+**解决：**
+```bash
+# 等待 1-2 分钟，然后重试
+make update-apisix-merge
+
+# 检查 etcd
+docker compose ps etcd
+docker compose logs etcd
+```
+
+### 错误 4：数据库连接失败
+**原因：** 数据库未初始化
+**解决：**
+```bash
+docker compose restart postgres
+./scripts/init-postgres.sh
+```
+
+---
+
+## 📚 文档导航
+
+| 文档 | 用途 |
+|------|------|
+| `README.md` | 完整学习框架（多层次教程） |
+| `docs/PROTO-EXPLANATION.md` | Proto 文件的两个用途详解 |
+| `apisix/config/routes/README.md` | 路由配置说明 |
+
+---
+
+## 🎓 学习路径
+
+1. **第一层**：理解架构（15 分钟）
+   - README.md → 架构概览
+   - README.md → 技术栈
+
+2. **第二层**：核心概念（30 分钟）
+   - README.md → 完整学习路径 → 核心概念部分
+   - docs/PROTO-EXPLANATION.md
+
+3. **第三层**：实践操作（45 分钟）
+   - README.md → 完整学习路径 → 实践操作部分
+
+4. **第四层**：故障排查（20 分钟）
+   - README.md → 故障排查部分
+   - 本文件的"常见错误"部分
+
+---
+
+## 💡 最佳实践
+
+### 1. 配置管理
+- ✅ 始终在 Git 中跟踪配置
+- ✅ 修改前备份当前配置
+- ✅ 使用 `make validate-config` 验证
+- ✅ 逐个修改服务的路由，避免大规模改动
+
+### 2. 故障排查
+- ✅ 首先查看日志：`docker compose logs <service>`
+- ✅ 使用 `make validate-config` 检查配置
+- ✅ 用 curl 测试 Admin API
+- ✅ 使用 etcdctl 检查 etcd 中的数据
+
+### 3. 路由配置
+- ✅ 使用正确的 gRPC service 和 method 名称
+- ✅ 确保 proto_id 正确
+- ✅ 使用一致的 URI 命名规范
+- ✅ 启用 CORS 便于前端开发
+
+### 4. 本地开发
+- ✅ 使用 `services/` 目录进行本地开发
+- ✅ 定期 pull 最新配置
+- ✅ 提交前验证配置
+- ✅ 参考 README.md 中的实践操作部分
+
+---
+
+## 🔍 代码审查清单
+
+新增路由时检查：
+- [ ] URI 路径是否正确？
+- [ ] HTTP 方法是否正确？
+- [ ] gRPC service 和 method 名称是否正确？
+- [ ] proto_id 是否存在且正确？
+- [ ] 上游服务地址是否正确？
+- [ ] 是否配置了 CORS？
+- [ ] 是否配置了其他需要的插件？
+- [ ] 路由是否与现有路由冲突？
+
+修改脚本时检查：
+- [ ] 是否使用了正确的 etcd 地址？
+- [ ] 是否使用了正确的 Admin API Key？
+- [ ] 错误处理是否完善？
+- [ ] 日志输出是否清晰？
+- [ ] 是否需要更新文档？
+
+---
+
+## 🚨 紧急应对
+
+### 配置错误导致所有 API 不可用
+```bash
+# 1. 查看 etcd 中的配置
+docker compose exec etcd etcdctl get --prefix /apisix/routes
+
+# 2. 删除错误的配置（如果需要）
+docker compose exec etcd etcdctl del /apisix/routes/bad-route
+
+# 3. 重新部署正确的配置
+make update-apisix-merge
+```
+
+### APISIX 完全崩溃
+```bash
+# 1. 重启 APISIX
+docker compose restart apisix
+
+# 2. 重启 etcd
+docker compose restart etcd
+
+# 3. 重新部署配置
+make update-apisix-merge
+```
+
+### 数据库损坏
+```bash
+# 1. 停止所有服务
+docker compose down
+
+# 2. 删除数据库卷
+docker volume rm uyou-Infrastructure_postgres_data
+
+# 3. 重启
+docker compose up -d
+./scripts/init-postgres.sh
+```
+
+---
+
+## 📞 获取帮助
+
+- **快速开始**：查看 README.md 的 5 分钟快速开始部分
+- **概念疑问**：查看 README.md 的核心概念部分
+- **实践问题**：查看 README.md 的实践操作部分
+- **故障排查**：查看 README.md 的故障排查部分或本文件的常见错误
+- **Proto 详解**：查看 docs/PROTO-EXPLANATION.md
+
+---
+
+**最后更新：** 2024年
+**维护者：** uyou Team
+**License：** MIT

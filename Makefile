@@ -1,4 +1,4 @@
-.PHONY: proto proto-update update-apisix update-apisix-merge generate-route sync-routes validate-config clean build run stop restart logs help
+.PHONY: proto proto-update update-apisix-merge generate-route validate-config clean build run stop restart logs help
 
 # 帮助信息
 help:
@@ -6,13 +6,12 @@ help:
 	@echo ""
 	@echo "APISIX 配置管理:"
 	@echo "  make update-apisix-merge - 合并并更新 APISIX 配置（从 apisix/config/routes/ 读取）"
-	@echo "  make update-apisix       - 更新 APISIX 配置（传统方式，从 apisix/config/apisix.yaml）"
 	@echo "  make validate-config     - 验证 APISIX 配置"
-	@echo "  make sync-routes          - 从本地 services/ 目录同步路由配置（本地开发用）"
 	@echo ""
 	@echo "本地开发（如果 services/ 目录有微服务代码）:"
 	@echo "  make proto               - 生成所有微服务的 Proto 代码文件"
-	@echo "  make generate-route      - 从 proto 生成路由配置"
+	@echo "  make generate-route      - 从 proto 生成所有服务的路由配置（自动遍历）"
+	@echo "  make generate-route SERVICE=<name> - 生成指定服务的路由配置"
 	@echo "  make build               - 构建所有微服务"
 	@echo ""
 	@echo "服务管理:"
@@ -29,7 +28,7 @@ help:
 	@echo ""
 	@echo "说明:"
 	@echo "  - services/ 目录用于本地开发，不提交到 Git"
-	@echo "  - 路由配置通过 Git Hook 自动从微服务仓库同步到 apisix/config/routes/"
+	@echo "  - 路由配置通过各微服务仓库的 apisix/routes.yaml 文件提供"
 	@echo "  - 使用 make update-apisix-merge 合并并部署所有路由配置"
 
 # 生成 Proto 文件（自动遍历本地 services/ 目录中的微服务）
@@ -89,12 +88,6 @@ proto:
 		echo "Protobuf files generated successfully!"; \
 	fi
 
-# 更新 APISIX 路由配置（传统方式：从单个配置文件）
-update-apisix:
-	@echo "更新 APISIX 路由配置（传统方式）..."
-	@./scripts/init-apisix-routes.sh
-	@echo "APISIX configuration updated!"
-
 # 更新 APISIX 路由配置（推荐方式：合并多个配置文件）
 # 从 apisix/config/routes/ 目录读取所有微服务的路由配置并合并部署
 update-apisix-merge:
@@ -104,32 +97,57 @@ update-apisix-merge:
 	@echo "APISIX configuration updated!"
 
 # 从 proto 文件生成路由配置（本地开发用）
+# 如果指定了 SERVICE，只生成该服务的路由配置
+# 如果没有指定 SERVICE，自动遍历 services/ 目录下的所有服务
 generate-route:
-	@echo "从 proto 文件生成路由配置..."
-	@echo "用法: make generate-route SERVICE=<service-name>"
-	@echo "示例: make generate-route SERVICE=user"
-	@if [ -z "$(SERVICE)" ]; then \
-		echo "错误: 请指定 SERVICE 参数"; \
-		exit 1; \
+	@if [ -n "$(SERVICE)" ]; then \
+		echo "从 proto 文件生成路由配置: $(SERVICE)"; \
+		if [ ! -f "services/$(SERVICE)/proto/$(SERVICE).proto" ]; then \
+			echo "错误: 找不到 services/$(SERVICE)/proto/$(SERVICE).proto"; \
+			echo "提示: 请先克隆微服务仓库到 services/ 目录"; \
+			exit 1; \
+		fi; \
+		./scripts/generate-route-config.sh $(SERVICE) services/$(SERVICE)/proto/$(SERVICE).proto; \
+	else \
+		echo "从 proto 文件生成路由配置（自动遍历所有服务）..."; \
+		if [ ! -d "services" ] || [ -z "$$(ls -A services 2>/dev/null)" ]; then \
+			echo "⚠ services/ 目录为空或不存在"; \
+			echo "提示: 如果需要生成路由配置，请先克隆微服务仓库到 services/ 目录"; \
+			echo "  例如: git clone https://github.com/your-org/uyou-user-service.git services/user-service"; \
+			echo ""; \
+			echo "或者指定单个服务: make generate-route SERVICE=user"; \
+			exit 0; \
+		fi; \
+		failed=0; \
+		generated=0; \
+		for service_dir in services/*/; do \
+			service_name=$$(basename "$$service_dir"); \
+			proto_file="$$service_dir/proto/$$service_name.proto"; \
+			if [ -f "$$proto_file" ]; then \
+				echo "处理微服务: $$service_name"; \
+				if ./scripts/generate-route-config.sh $$service_name "$$proto_file"; then \
+					echo "  ✓ $$service_name 路由配置已生成"; \
+					generated=$$((generated + 1)); \
+				else \
+					echo "  ✗ $$service_name 路由配置生成失败"; \
+					failed=$$((failed + 1)); \
+				fi; \
+			else \
+				echo "  ⚠ $$service_name: 未找到 proto/$$service_name.proto，跳过"; \
+			fi; \
+		done; \
+		echo ""; \
+		if [ $$generated -gt 0 ]; then \
+			echo "✓ 成功生成 $$generated 个服务的路由配置"; \
+		fi; \
+		if [ $$failed -gt 0 ]; then \
+			echo "✗ $$failed 个服务的路由配置生成失败"; \
+			exit 1; \
+		fi; \
+		if [ $$generated -eq 0 ] && [ $$failed -eq 0 ]; then \
+			echo "⚠ 没有找到任何 proto 文件"; \
+		fi; \
 	fi
-	@if [ ! -f "services/$(SERVICE)/proto/$(SERVICE).proto" ]; then \
-		echo "错误: 找不到 services/$(SERVICE)/proto/$(SERVICE).proto"; \
-		echo "提示: 请先克隆微服务仓库到 services/ 目录"; \
-		exit 1; \
-	fi
-	@./scripts/generate-route-config.sh $(SERVICE) services/$(SERVICE)/proto/$(SERVICE).proto
-
-# 同步微服务路由配置（从本地 services/ 目录同步到 apisix/config/routes/）
-# 注意：这仅用于本地开发，生产环境通过 Git Hook 自动同步
-sync-routes:
-	@echo "从本地 services/ 目录同步路由配置..."
-	@if [ ! -d "services" ] || [ -z "$$(ls -A services 2>/dev/null)" ]; then \
-		echo "⚠ services/ 目录为空或不存在"; \
-		echo "提示: 路由配置通常通过 Git Hook 从微服务仓库自动同步"; \
-		echo "如果需要在本地开发，请克隆微服务仓库到 services/ 目录"; \
-		exit 0; \
-	fi
-	@./scripts/sync-routes.sh
 
 # 验证 APISIX 配置
 validate-config:

@@ -163,7 +163,7 @@ services:
     container_name: uyou-apisix
     volumes:
       - ./apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./apisix/config/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      # - ./apisix/config/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
     ports:
       - "9080:9080"   # HTTP
       - "9443:9443"   # HTTPS
