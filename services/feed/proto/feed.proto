@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package feed;
+
+option go_package = "github.com/yeegeek/uyou-Infrastructure/proto/feed";
+
+// 动态服务
+service FeedService {
+  // 创建动态
+  rpc CreateFeed(CreateFeedRequest) returns (CreateFeedResponse);
+  
+  // 获取动态详情
+  rpc GetFeed(GetFeedRequest) returns (GetFeedResponse);
+  
+  // 获取用户动态列表
+  rpc ListFeeds(ListFeedsRequest) returns (ListFeedsResponse);
+  
+  // 删除动态
+  rpc DeleteFeed(DeleteFeedRequest) returns (DeleteFeedResponse);
+  
+  // 点赞动态
+  rpc LikeFeed(LikeFeedRequest) returns (LikeFeedResponse);
+}
+
+// 创建动态请求
+message CreateFeedRequest {
+  int64 user_id = 1;
+  string content = 2;
+  repeated string images = 3;
+  string location = 4;
+}
+
+// 创建动态响应
+message CreateFeedResponse {
+  string feed_id = 1;
+  string message = 2;
+}
+
+// 获取动态请求
+message GetFeedRequest {
+  string feed_id = 1;
+}
+
+// 获取动态响应
+message GetFeedResponse {
+  string feed_id = 1;
+  int64 user_id = 2;
+  string content = 3;
+  repeated string images = 4;
+  string location = 5;
+  int32 likes = 6;
+  int32 comments = 7;
+  string created_at = 8;
+}
+
+// 获取动态列表请求
+message ListFeedsRequest {
+  int64 user_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+// 获取动态列表响应
+message ListFeedsResponse {
+  repeated GetFeedResponse feeds = 1;
+  int32 total = 2;
+}
+
+// 删除动态请求
+message DeleteFeedRequest {
+  string feed_id = 1;
+  int64 user_id = 2;
+}
+
+// 删除动态响应
+message DeleteFeedResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// 点赞动态请求
+message LikeFeedRequest {
+  string feed_id = 1;
+  int64 user_id = 2;
+}
+
+// 点赞动态响应
+message LikeFeedResponse {
+  bool success = 1;
+  int32 total_likes = 2;
+}
