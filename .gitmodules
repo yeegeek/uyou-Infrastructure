@@ -1,0 +1,9 @@
+[submodule "services/user"]
+	path = services/user
+	url = https://github.com/yeegeek/uyou-user-service.git
+[submodule "services/order"]
+	path = services/order
+	url = https://github.com/yeegeek/uyou-order-service.git
+[submodule "services/feed"]
+	path = services/feed
+	url = https://github.com/yeegeek/uyou-feed-service.git
