@@ -22,6 +22,24 @@ for i in {1..60}; do
     sleep 2
 done
 
+# 创建默认的 global_rule
+echo -e "\n创建默认 Global Rule..."
+response=$(curl -s -X PUT "${GATEWAY_URL}/apisix/admin/global_rules/1" \
+    -H "X-API-KEY: ${ADMIN_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"plugins": {}}')
+
+if echo "$response" | grep -q '"key"'; then
+    echo "  ✓ Global Rule 创建成功"
+else
+    # 如果已存在，也认为是成功的
+    if echo "$response" | grep -q "already exists\|duplicate"; then
+        echo "  ✓ Global Rule 已存在"
+    else
+        echo "  ⚠ Global Rule 创建失败（非致命错误）: $response"
+    fi
+fi
+
 # 函数：创建路由
 create_route() {
     local name=$1

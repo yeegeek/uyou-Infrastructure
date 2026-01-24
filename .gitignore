@@ -4,7 +4,10 @@
 *.dll
 *.so
 *.dylib
-*-service
+# 微服务目录（本地开发使用，不提交到仓库）
+# services/ 目录用于本地开发，存放从独立仓库克隆的微服务代码
+services/*
+!services/.gitkeep
 
 # Test binary
 *.test

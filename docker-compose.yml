@@ -65,10 +65,11 @@ services:
       ALLOW_NONE_AUTHENTICATION: "yes"
       ETCD_ADVERTISE_CLIENT_URLS: "http://etcd:2379"
       ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
+      ETCD_DATA_DIR: /etcd-data
     ports:
       - "2379:2379"
     volumes:
-      - etcd_data:/bitnami/etcd
+      - etcd_data:/etcd-data
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 10s
@@ -175,25 +176,6 @@ services:
       order-service:
         condition: service_started
       feed-service:
-        condition: service_started
-    networks:
-      - uyou-network
-    restart: unless-stopped
-
-  # APISIX Dashboard（可选）
-  apisix-dashboard:
-    image: apache/apisix-dashboard:3.0.1-alpine
-    container_name: uyou-apisix-dashboard
-    environment:
-      APISIX_API_URL: http://apisix:9180/apisix/admin
-    volumes:
-      - ./apisix/config/dashboard.yaml:/usr/local/apisix-dashboard/conf/conf.yaml:ro
-    ports:
-      - "9000:9000"
-    depends_on:
-      etcd:
-        condition: service_healthy
-      apisix:
         condition: service_started
     networks:
       - uyou-network

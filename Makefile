@@ -1,62 +1,194 @@
-.PHONY: proto proto-update update-apisix clean build run stop restart logs
+.PHONY: proto proto-update update-apisix update-apisix-merge generate-route sync-routes validate-config clean build run stop restart logs help
 
-# 生成 Proto 文件
+# 帮助信息
+help:
+	@echo "可用命令:"
+	@echo ""
+	@echo "APISIX 配置管理:"
+	@echo "  make update-apisix-merge - 合并并更新 APISIX 配置（从 apisix/config/routes/ 读取）"
+	@echo "  make update-apisix       - 更新 APISIX 配置（传统方式，从 apisix/config/apisix.yaml）"
+	@echo "  make validate-config     - 验证 APISIX 配置"
+	@echo "  make sync-routes          - 从本地 services/ 目录同步路由配置（本地开发用）"
+	@echo ""
+	@echo "本地开发（如果 services/ 目录有微服务代码）:"
+	@echo "  make proto               - 生成所有微服务的 Proto 代码文件"
+	@echo "  make generate-route      - 从 proto 生成路由配置"
+	@echo "  make build               - 构建所有微服务"
+	@echo ""
+	@echo "服务管理:"
+	@echo "  make run                 - 启动所有服务（Docker Compose）"
+	@echo "  make stop                - 停止所有服务"
+	@echo "  make restart             - 重启服务"
+	@echo "  make logs                - 查看日志"
+	@echo "  make clean               - 清理生成的文件"
+	@echo ""
+	@echo "环境变量:"
+	@echo "  APISIX_ENV=dev           - 设置环境（dev/staging/prod）"
+	@echo "  APISIX_ADMIN_URL         - APISIX Admin API 地址"
+	@echo "  APISIX_ADMIN_KEY         - APISIX Admin API 密钥"
+	@echo ""
+	@echo "说明:"
+	@echo "  - services/ 目录用于本地开发，不提交到 Git"
+	@echo "  - 路由配置通过 Git Hook 自动从微服务仓库同步到 apisix/config/routes/"
+	@echo "  - 使用 make update-apisix-merge 合并并部署所有路由配置"
+
+# 生成 Proto 文件（自动遍历本地 services/ 目录中的微服务）
+# 注意：这仅用于本地开发，微服务仓库有自己的 make proto 命令
 proto:
-	@echo "Generating protobuf files..."
-	@mkdir -p services/user/proto services/order/proto services/feed/proto
-	protoc --go_out=services/user/proto --go_opt=paths=source_relative \
-		--go-grpc_out=services/user/proto --go-grpc_opt=paths=source_relative \
-		proto/user.proto
-	protoc --go_out=services/order/proto --go_opt=paths=source_relative \
-		--go-grpc_out=services/order/proto --go-grpc_opt=paths=source_relative \
-		proto/order.proto
-	protoc --go_out=services/feed/proto --go_opt=paths=source_relative \
-		--go-grpc_out=services/feed/proto --go-grpc_opt=paths=source_relative \
-		proto/feed.proto
-	@echo "Protobuf files generated successfully!"
+	@echo "生成 Proto 代码文件（本地开发模式）..."
+	@if [ ! -d "services" ] || [ -z "$$(ls -A services 2>/dev/null)" ]; then \
+		echo "⚠ services/ 目录为空或不存在"; \
+		echo "提示: 如果需要本地开发，请克隆微服务仓库到 services/ 目录"; \
+		echo "  例如: git clone https://github.com/your-org/uyou-user-service.git services/user-service"; \
+		exit 0; \
+	fi
+	@failed=0; \
+	for service_dir in services/*/; do \
+		service_name=$$(basename "$$service_dir"); \
+		proto_dir="$$service_dir/proto"; \
+		if [ -d "$$proto_dir" ]; then \
+			echo "处理微服务: $$service_name"; \
+			proto_files=$$(find "$$proto_dir" -maxdepth 1 -name "*.proto" 2>/dev/null | sort); \
+			if [ -n "$$proto_files" ]; then \
+				service_failed=0; \
+				for proto_file in $$proto_files; do \
+					proto_name=$$(basename "$$proto_file" .proto); \
+					echo "  生成: $$proto_name.proto"; \
+					cd "$$proto_dir" && \
+					if protoc --go_out=. --go_opt=paths=source_relative \
+						--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+						"$$(basename "$$proto_file")" > /dev/null 2>&1; then \
+						echo "    ✓ 成功"; \
+					else \
+						echo "    ✗ 失败"; \
+						service_failed=1; \
+						failed=1; \
+					fi; \
+					cd - > /dev/null; \
+				done; \
+				if [ $$service_failed -eq 0 ]; then \
+					echo "  ✓ $$service_name 完成"; \
+				else \
+					echo "  ✗ $$service_name 有错误"; \
+				fi; \
+			else \
+				echo "  ⚠ $$service_name: 未找到 .proto 文件"; \
+			fi; \
+		else \
+			echo "  ⚠ $$service_name: 未找到 proto/ 目录，跳过"; \
+		fi; \
+	done; \
+	if [ $$failed -eq 1 ]; then \
+		echo ""; \
+		echo "错误: 部分 protobuf 文件生成失败"; \
+		echo "请确保已安装 protoc-gen-go 和 protoc-gen-go-grpc:"; \
+		echo "  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"; \
+		echo "  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest"; \
+		exit 1; \
+	else \
+		echo "Protobuf files generated successfully!"; \
+	fi
 
-# 更新 APISIX 路由配置（从 proto 文件自动读取）
+# 更新 APISIX 路由配置（传统方式：从单个配置文件）
 update-apisix:
-	@echo "Updating APISIX routes and proto definitions..."
+	@echo "更新 APISIX 路由配置（传统方式）..."
 	@./scripts/init-apisix-routes.sh
 	@echo "APISIX configuration updated!"
 
-# 完整的 Proto 更新流程：生成代码 + 更新 APISIX 配置
-proto-update: proto update-apisix
-	@echo "Proto update complete! Restart services with: make restart"
+# 更新 APISIX 路由配置（推荐方式：合并多个配置文件）
+# 从 apisix/config/routes/ 目录读取所有微服务的路由配置并合并部署
+update-apisix-merge:
+	@echo "合并并更新 APISIX 配置（多服务方式）..."
+	@echo "从 apisix/config/routes/ 读取路由配置..."
+	@./scripts/merge-apisix-configs.sh
+	@echo "APISIX configuration updated!"
 
-# 构建所有服务
+# 从 proto 文件生成路由配置（本地开发用）
+generate-route:
+	@echo "从 proto 文件生成路由配置..."
+	@echo "用法: make generate-route SERVICE=<service-name>"
+	@echo "示例: make generate-route SERVICE=user"
+	@if [ -z "$(SERVICE)" ]; then \
+		echo "错误: 请指定 SERVICE 参数"; \
+		exit 1; \
+	fi
+	@if [ ! -f "services/$(SERVICE)/proto/$(SERVICE).proto" ]; then \
+		echo "错误: 找不到 services/$(SERVICE)/proto/$(SERVICE).proto"; \
+		echo "提示: 请先克隆微服务仓库到 services/ 目录"; \
+		exit 1; \
+	fi
+	@./scripts/generate-route-config.sh $(SERVICE) services/$(SERVICE)/proto/$(SERVICE).proto
+
+# 同步微服务路由配置（从本地 services/ 目录同步到 apisix/config/routes/）
+# 注意：这仅用于本地开发，生产环境通过 Git Hook 自动同步
+sync-routes:
+	@echo "从本地 services/ 目录同步路由配置..."
+	@if [ ! -d "services" ] || [ -z "$$(ls -A services 2>/dev/null)" ]; then \
+		echo "⚠ services/ 目录为空或不存在"; \
+		echo "提示: 路由配置通常通过 Git Hook 从微服务仓库自动同步"; \
+		echo "如果需要在本地开发，请克隆微服务仓库到 services/ 目录"; \
+		exit 0; \
+	fi
+	@./scripts/sync-routes.sh
+
+# 验证 APISIX 配置
+validate-config:
+	@echo "验证 APISIX 配置..."
+	@./scripts/validate-config.sh
+
+# 构建所有服务（自动遍历本地 services/ 目录中的微服务）
 build:
-	@echo "Building services..."
-	cd services/user && go mod tidy && go build -o user-service
-	cd services/order && go mod tidy && go build -o order-service
-	cd services/feed && go mod tidy && go build -o feed-service
+	@echo "构建服务（本地开发模式）..."
+	@if [ ! -d "services" ] || [ -z "$$(ls -A services 2>/dev/null)" ]; then \
+		echo "⚠ services/ 目录为空或不存在"; \
+		echo "提示: 微服务通常在各自的仓库中构建"; \
+		exit 0; \
+	fi
+	@for service_dir in services/*/; do \
+		service_name=$$(basename "$$service_dir"); \
+		if [ -f "$$service_dir/go.mod" ]; then \
+			echo "构建微服务: $$service_name"; \
+			cd "$$service_dir" && go mod tidy && go build -o "$$service_name-service" . || exit 1; \
+			cd - > /dev/null; \
+			echo "  ✓ $$service_name 构建完成"; \
+		else \
+			echo "  ⚠ $$service_name: 未找到 go.mod，跳过"; \
+		fi; \
+	done
 	@echo "All services built successfully!"
 
 # 启动所有服务
 run:
-	@echo "Starting all services with Docker Compose..."
-	docker compose up -d
-	@echo "All services started!"
-	@echo "APISIX Dashboard: http://localhost:9000"
+	@echo "启动所有服务（Docker Compose）..."
+	@docker compose up -d
+	@echo "所有服务已启动！"
 	@echo "APISIX Gateway: http://localhost:9080"
+	@echo "APISIX Admin API: http://localhost:9180"
+	@echo ""
+	@echo "提示: 使用 'make update-apisix-merge' 初始化路由配置"
 
 # 停止所有服务
 stop:
-	@echo "Stopping all services..."
-	docker compose down
-	@echo "All services stopped!"
+	@echo "停止所有服务..."
+	@docker compose down
+	@echo "所有服务已停止！"
 
-# 清理生成的文件
+# 清理生成的文件（自动遍历本地 services/ 目录中的微服务）
 clean:
-	@echo "Cleaning generated files..."
-	rm -rf services/*/proto/*.go
-	rm -rf services/*/user-service services/*/order-service services/*/feed-service
-	@echo "Cleanup complete!"
+	@echo "清理生成的文件..."
+	@if [ -d "services" ]; then \
+		for service_dir in services/*/; do \
+			service_name=$$(basename "$$service_dir"); \
+			echo "清理: $$service_name"; \
+			rm -f "$$service_dir/proto"/*.go 2>/dev/null; \
+			rm -f "$$service_dir/$$service_name-service" 2>/dev/null; \
+		done; \
+	fi
+	@echo "清理完成！"
 
 # 查看日志
 logs:
-	docker compose logs -f
+	@docker compose logs -f
 
 # 重启服务
 restart: stop run
