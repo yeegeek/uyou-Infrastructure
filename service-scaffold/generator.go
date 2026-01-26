@@ -204,6 +204,11 @@ func generateService(config *ServiceConfig) error {
 		"internal/middleware/validator.go":            "template/internal/middleware/validator.go.tmpl",
 		"internal/repository/cache/cache_repository.go": "template/internal/repository/cache/cache_repository.go.tmpl",
 		"config/config.yaml":                          "template/config/config.yaml.tmpl",
+		".github/workflows/ci-cd.yml":                  "template/.github/workflows/ci-cd.yml.tmpl",
+		".golangci.yml":                                "template/.golangci.yml.tmpl",
+		".dockerignore":                                "template/.dockerignore.tmpl",
+		"deployments/docker/Dockerfile":                "template/deployments/docker/Dockerfile.tmpl",
+		"deployments/docker/docker-compose.yml":       "template/deployments/docker/docker-compose.yml.tmpl",
 	}
 
 	if config.UsePostgreSQL {
@@ -222,7 +227,19 @@ func generateService(config *ServiceConfig) error {
 		}
 	}
 
-	// 3. 生成 go.mod
+	// 3. 创建 Kubernetes 配置目录
+	kubeDirs := []string{
+		"deployments/kubernetes",
+		"helm/templates",
+	}
+	for _, dir := range kubeDirs {
+		fullPath := filepath.Join(serviceDir, dir)
+		if err := os.MkdirAll(fullPath, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", fullPath, err)
+		}
+	}
+
+	// 4. 生成 go.mod
 	if err := generateGoMod(serviceDir, config); err != nil {
 		return fmt.Errorf("failed to generate go.mod: %w", err)
 	}

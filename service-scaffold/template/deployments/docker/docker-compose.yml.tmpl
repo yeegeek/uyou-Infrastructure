@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # {{.ServiceName}} 服务
+  {{.ServiceName}}-service:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        VERSION: dev
+        BUILD_TIME: ${BUILD_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}
+        GIT_COMMIT: ${GIT_COMMIT:-$(git rev-parse --short HEAD)}
+    container_name: {{.ServiceName}}-service
+    ports:
+      - "{{.Port}}:{{.Port}}"
+    environment:
+      - SERVER_PORT={{.Port}}
+      - SERVER_MODE=development
+      {{if .UsePostgreSQL}}- DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres
+      - DATABASE_NAME={{.DatabaseName}}{{end}}
+      {{if .UseMongoDB}}- MONGODB_HOST=mongodb
+      - MONGODB_PORT=27017
+      - MONGODB_DATABASE={{.DatabaseName}}{{end}}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB={{.RedisDB}}
+      - LOGGER_LEVEL=debug
+    depends_on:
+      {{if .UsePostgreSQL}}- postgres{{end}}
+      {{if .UseMongoDB}}- mongodb{{end}}
+      - redis
+    networks:
+      - {{.ServiceName}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:{{.Port}}/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  {{if .UsePostgreSQL}}# PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: {{.ServiceName}}-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB={{.DatabaseName}}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../migrations:/docker-entrypoint-initdb.d
+    networks:
+      - {{.ServiceName}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  {{end}}
+
+  {{if .UseMongoDB}}# MongoDB 数据库
+  mongodb:
+    image: mongo:7
+    container_name: {{.ServiceName}}-mongodb
+    environment:
+      - MONGO_INITDB_DATABASE={{.DatabaseName}}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - {{.ServiceName}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  {{end}}
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: {{.ServiceName}}-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - {{.ServiceName}}-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+networks:
+  {{.ServiceName}}-network:
+    driver: bridge
+
+volumes:
+  {{if .UsePostgreSQL}}postgres-data:{{end}}
+  {{if .UseMongoDB}}mongodb-data:{{end}}
+  redis-data:

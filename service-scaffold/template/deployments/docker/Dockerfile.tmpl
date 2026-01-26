@@ -1,0 +1,72 @@
+# ==========================================
+# 构建阶段
+# ==========================================
+FROM golang:1.21-alpine AS builder
+
+# 安装必要的构建工具
+RUN apk add --no-cache git make ca-certificates tzdata
+
+# 设置工作目录
+WORKDIR /build
+
+# 复制 go.mod 和 go.sum 并下载依赖（利用 Docker 缓存）
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# 复制源代码
+COPY . .
+
+# 构建二进制文件
+# CGO_ENABLED=0: 禁用 CGO，生成静态链接的二进制文件
+# -ldflags: 编译选项
+#   -w: 去除 DWARF 调试信息
+#   -s: 去除符号表
+#   -X: 注入版本信息
+ARG VERSION=dev
+ARG BUILD_TIME
+ARG GIT_COMMIT
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s \
+    -X '{{.ModulePath}}/pkg/version.Version=${VERSION}' \
+    -X '{{.ModulePath}}/pkg/version.BuildTime=${BUILD_TIME}' \
+    -X '{{.ModulePath}}/pkg/version.GitCommit=${GIT_COMMIT}'" \
+    -o {{.ServiceName}}-service \
+    cmd/server/main.go
+
+# ==========================================
+# 运行阶段
+# ==========================================
+FROM alpine:latest
+
+# 安装运行时依赖
+RUN apk add --no-cache ca-certificates tzdata curl
+
+# 创建非 root 用户
+RUN addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser
+
+# 设置工作目录
+WORKDIR /app
+
+# 从构建阶段复制二进制文件
+COPY --from=builder /build/{{.ServiceName}}-service .
+
+# 复制配置文件
+COPY --from=builder /build/config ./config
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+
+# 切换到非 root 用户
+USER appuser
+
+# 暴露端口
+EXPOSE {{.Port}}
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:{{.Port}}/health || exit 1
+
+# 启动服务
+ENTRYPOINT ["./{{.ServiceName}}-service"]

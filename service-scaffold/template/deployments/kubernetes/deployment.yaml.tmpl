@@ -1,0 +1,195 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.ServiceName}}-service
+  namespace: {{ .Namespace | default "default" }}
+  labels:
+    app: {{.ServiceName}}-service
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: {{.ServiceName}}-service
+  template:
+    metadata:
+      labels:
+        app: {{.ServiceName}}-service
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{.Port}}"
+        prometheus.io/path: "/metrics"
+    spec:
+      # 服务账户
+      serviceAccountName: {{.ServiceName}}-service
+
+      # 安全上下文
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      # 初始化容器（等待依赖服务）
+      initContainers:
+        {{if .UsePostgreSQL}}- name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres-service 5432; do echo waiting for postgres; sleep 2; done;']
+        {{end}}
+        - name: wait-for-redis
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z redis-service 6379; do echo waiting for redis; sleep 2; done;']
+
+      # 主容器
+      containers:
+        - name: {{.ServiceName}}-service
+          image: ghcr.io/{{.GitRepo}}:latest
+          imagePullPolicy: Always
+          
+          # 端口配置
+          ports:
+            - name: grpc
+              containerPort: {{.Port}}
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+
+          # 环境变量
+          env:
+            - name: SERVER_PORT
+              value: "{{.Port}}"
+            - name: SERVER_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{.ServiceName}}-config
+                  key: server.mode
+            {{if .UsePostgreSQL}}- name: DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{.ServiceName}}-config
+                  key: database.host
+            - name: DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{.ServiceName}}-config
+                  key: database.port
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{.ServiceName}}-secret
+                  key: database.user
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{.ServiceName}}-secret
+                  key: database.password
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{.ServiceName}}-config
+                  key: database.name
+            {{end}}
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{.ServiceName}}-config
+                  key: redis.host
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{.ServiceName}}-config
+                  key: redis.port
+            - name: REDIS_DB
+              value: "{{.RedisDB}}"
+            - name: LOGGER_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{.ServiceName}}-config
+                  key: logger.level
+
+          # 资源限制
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          # 健康检查
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "grpc_health_probe -addr=:{{.Port}}"
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "grpc_health_probe -addr=:{{.Port}}"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # 启动探针
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "grpc_health_probe -addr=:{{.Port}}"
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          # 挂载配置
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+
+      # 卷配置
+      volumes:
+        - name: config
+          configMap:
+            name: {{.ServiceName}}-config
+
+      # 亲和性配置（尽量分散到不同节点）
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - {{.ServiceName}}-service
+                topologyKey: kubernetes.io/hostname
+
+      # 容忍度配置
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 300

@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: {{ .Namespace | default "default" }}
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+
+commonLabels:
+  app: {{.ServiceName}}-service
+  managed-by: kustomize
+
+images:
+  - name: ghcr.io/{{.GitRepo}}
+    newTag: latest
+
+configMapGenerator:
+  - name: {{.ServiceName}}-config
+    behavior: merge
+    files:
+      - config/config.yaml
+
+secretGenerator:
+  - name: {{.ServiceName}}-secret
+    behavior: merge
+    envs:
+      - config/secrets.env

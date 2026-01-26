@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{.ServiceName}}-config
+  namespace: {{ .Namespace | default "default" }}
+  labels:
+    app: {{.ServiceName}}-service
+data:
+  # 服务配置
+  server.mode: "production"
+  server.port: "{{.Port}}"
+
+  {{if .UsePostgreSQL}}# 数据库配置
+  database.host: "postgres-service"
+  database.port: "5432"
+  database.name: "{{.DatabaseName}}"
+  database.max_open_conns: "25"
+  database.max_idle_conns: "5"
+  database.conn_max_lifetime: "300"
+  {{end}}
+
+  # Redis 配置
+  redis.host: "redis-service"
+  redis.port: "6379"
+  redis.db: "{{.RedisDB}}"
+  redis.pool_size: "10"
+
+  # 日志配置
+  logger.level: "info"
+  logger.format: "json"
+  logger.output: "stdout"
+
+  # 配置文件
+  config.yaml: |
+    server:
+      port: {{.Port}}
+      mode: production
+      read_timeout: 30s
+      write_timeout: 30s
+      idle_timeout: 60s
+
+    {{if .UsePostgreSQL}}database:
+      host: postgres-service
+      port: 5432
+      user: ${DATABASE_USER}
+      password: ${DATABASE_PASSWORD}
+      database: {{.DatabaseName}}
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: 300
+    {{end}}
+
+    redis:
+      host: redis-service
+      port: 6379
+      password: ${REDIS_PASSWORD}
+      db: {{.RedisDB}}
+      pool_size: 10
+      min_idle_conns: 5
+      dial_timeout: 5s
+      read_timeout: 3s
+      write_timeout: 3s
+
+    logger:
+      level: info
+      format: json
+      output: stdout
+      enable_caller: true
+      enable_stacktrace: true
+
+    tracing:
+      enabled: true
+      service_name: {{.ServiceName}}-service
+      jaeger_endpoint: http://jaeger-collector:14268/api/traces
+      sample_rate: 0.1
+
+    metrics:
+      enabled: true
+      port: 9090
+      path: /metrics

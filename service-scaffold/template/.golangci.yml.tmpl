@@ -1,0 +1,50 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck      # 检查未处理的错误
+    - gosimple      # 简化代码
+    - govet         # Go 官方检查工具
+    - ineffassign   # 检查无效赋值
+    - staticcheck   # 静态分析
+    - unused        # 检查未使用的代码
+    - gofmt         # 格式化检查
+    - goimports     # import 排序
+    - misspell      # 拼写检查
+    - revive        # 代码风格检查
+    - gosec         # 安全检查
+    - bodyclose     # HTTP body 关闭检查
+    - noctx         # HTTP 请求需要 context
+    - errname       # 错误命名检查
+    - errorlint     # 错误处理检查
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  govet:
+    check-shadowing: true
+
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+      - name: var-naming
+        severity: warning
+        disabled: false
+
+  gosec:
+    excludes:
+      - G404  # 使用弱随机数生成器（在非安全场景可以忽略）
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
