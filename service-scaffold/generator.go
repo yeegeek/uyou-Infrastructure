@@ -50,7 +50,7 @@ func main() {
 	fmt.Println("✅ 服务生成成功！")
 	fmt.Println()
 	fmt.Println("📝 后续步骤：")
-	fmt.Printf("   1. cd %s\n", config.ServiceName)
+	fmt.Printf("   1. cd services/%s\n", strings.ToLower(config.ServiceName))
 	fmt.Println("   2. 编辑 api/proto/*.proto 定义 API")
 	fmt.Println("   3. make proto  # 生成 Proto 代码")
 	fmt.Println("   4. 实现业务逻辑")
@@ -63,68 +63,53 @@ func collectInput() *ServiceConfig {
 	reader := bufio.NewReader(os.Stdin)
 	config := &ServiceConfig{}
 
-	// 服务名称
 	config.ServiceName = readInput(reader, "服务名称 (如 User, Order, Feed)", "User")
 	config.EntityName = config.ServiceName
-
-	// Git 仓库
 	config.GitRepo = readInput(reader, "Git 仓库地址 (如 github.com/uyou/uyou-user-service)", "")
 
-	// 模块路径
 	if config.GitRepo != "" {
 		config.ModulePath = config.GitRepo
 	} else {
-		config.ModulePath = readInput(reader, "Go 模块路径", fmt.Sprintf("github.com/uyou/uyou-%s-service", strings.ToLower(config.ServiceName)))
+		config.ModulePath = readInput(reader, "Go 模块路径", fmt.Sprintf("github.com/yeegeek/uyou-%s-service", strings.ToLower(config.ServiceName)))
 	}
 
-	// 端口
 	portStr := readInput(reader, "gRPC 端口", "50051")
 	fmt.Sscanf(portStr, "%d", &config.Port)
 
-	// 数据库类型
 	dbType := readInput(reader, "数据库类型 (postgres/mongodb)", "postgres")
 	config.UsePostgreSQL = strings.ToLower(dbType) == "postgres"
 	config.UseMongoDB = strings.ToLower(dbType) == "mongodb"
 
-	// 数据库名称
 	config.DatabaseName = readInput(reader, "数据库名称", strings.ToLower(config.ServiceName)+"db")
-
 	if config.UsePostgreSQL {
 		config.TableName = readInput(reader, "表名称", strings.ToLower(config.ServiceName)+"s")
 	}
 
-	// Redis DB
 	redisDBStr := readInput(reader, "Redis DB (0-15)", "0")
 	fmt.Sscanf(redisDBStr, "%d", &config.RedisDB)
 
-	// 缓存前缀
 	config.CachePrefix = readInput(reader, "缓存前缀", strings.ToLower(config.ServiceName))
 
-	// 消息队列
 	useQueue := readInput(reader, "是否使用消息队列? (y/n)", "n")
 	config.UseQueue = strings.ToLower(useQueue) == "y"
 
 	return config
 }
 
-// readInput 读取用户输入
 func readInput(reader *bufio.Reader, prompt, defaultValue string) string {
 	if defaultValue != "" {
 		fmt.Printf("%s [%s]: ", prompt, defaultValue)
 	} else {
 		fmt.Printf("%s: ", prompt)
 	}
-
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
-
 	if input == "" {
 		return defaultValue
 	}
 	return input
 }
 
-// confirmConfig 确认配置
 func confirmConfig(config *ServiceConfig) bool {
 	fmt.Println()
 	fmt.Println("📋 配置确认")
@@ -149,35 +134,34 @@ func confirmConfig(config *ServiceConfig) bool {
 	return strings.ToLower(confirm) == "y"
 }
 
-// generateService 生成服务
 func generateService(config *ServiceConfig) error {
-	serviceName := strings.ToLower(config.ServiceName) + "-service"
-	serviceDir := filepath.Join("../", serviceName)
-
+	serviceName := strings.ToLower(config.ServiceName)
+	cwd, _ := os.Getwd()
+	var serviceDir string
+	if filepath.Base(cwd) == "service-scaffold" {
+		serviceDir = filepath.Join("../services", serviceName)
+	} else {
+		serviceDir = filepath.Join("services", serviceName)
+	}
+	
 	fmt.Printf("📁 创建目录: %s\n", serviceDir)
 
-	// 1. 创建目录结构
 	dirs := []string{
 		"cmd/server",
 		"internal/handler",
 		"internal/service",
 		"internal/repository/cache",
-		"internal/model/dto",
+		"internal/model",
 		"internal/middleware",
 		"internal/validator",
-		"internal/util",
-		"internal/worker",
 		"pkg/config",
 		"pkg/database",
 		"pkg/logger",
 		"pkg/errors",
 		"api/proto",
 		"config",
-		"migrations",
-		"scripts",
 		"deployments/docker",
 		"docs",
-		"test/integration",
 	}
 
 	for _, dir := range dirs {
@@ -187,7 +171,6 @@ func generateService(config *ServiceConfig) error {
 		}
 	}
 
-	// 2. 生成文件
 	templates := map[string]string{
 		"cmd/server/main.go":                          "template/cmd/server/main.go.tmpl",
 		"pkg/config/config.go":                        "template/pkg/config/config.go.tmpl",
@@ -204,7 +187,6 @@ func generateService(config *ServiceConfig) error {
 		"internal/middleware/validator.go":            "template/internal/middleware/validator.go.tmpl",
 		"internal/repository/cache/cache_repository.go": "template/internal/repository/cache/cache_repository.go.tmpl",
 		"config/config.yaml":                          "template/config/config.yaml.tmpl",
-		".github/workflows/ci-cd.yml":                  "template/.github/workflows/ci-cd.yml.tmpl",
 		".golangci.yml":                                "template/.golangci.yml.tmpl",
 		".dockerignore":                                "template/.dockerignore.tmpl",
 		"deployments/docker/Dockerfile":                "template/deployments/docker/Dockerfile.tmpl",
@@ -215,7 +197,6 @@ func generateService(config *ServiceConfig) error {
 		templates["pkg/database/postgres.go"] = "template/pkg/database/postgres.go.tmpl"
 		templates["internal/repository/repository.go"] = "template/internal/repository/repository_postgres.go.tmpl"
 	}
-
 	if config.UseMongoDB {
 		templates["pkg/database/mongodb.go"] = "template/pkg/database/mongodb.go.tmpl"
 	}
@@ -227,44 +208,19 @@ func generateService(config *ServiceConfig) error {
 		}
 	}
 
-	// 3. 创建 Kubernetes 配置目录
-	kubeDirs := []string{
-		"deployments/kubernetes",
-		"helm/templates",
-	}
-	for _, dir := range kubeDirs {
-		fullPath := filepath.Join(serviceDir, dir)
-		if err := os.MkdirAll(fullPath, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", fullPath, err)
-		}
-	}
-
-	// 4. 生成 go.mod
 	if err := generateGoMod(serviceDir, config); err != nil {
 		return fmt.Errorf("failed to generate go.mod: %w", err)
 	}
-
-	// 4. 生成 Makefile
 	if err := generateMakefile(serviceDir, config); err != nil {
 		return fmt.Errorf("failed to generate Makefile: %w", err)
 	}
-
-	// 5. 生成 README
-	if err := generateReadme(serviceDir, config); err != nil {
-		return fmt.Errorf("failed to generate README: %w", err)
-	}
-
-	// 6. 生成 Dockerfile
 	if err := generateDockerfile(serviceDir, config); err != nil {
 		return fmt.Errorf("failed to generate Dockerfile: %w", err)
 	}
-
-	// 7. 生成 Proto 示例
 	if err := generateProtoExample(serviceDir, config); err != nil {
 		return fmt.Errorf("failed to generate proto example: %w", err)
 	}
 
-	// 8. 初始化 Git（如果提供了仓库地址）
 	if config.GitRepo != "" {
 		fmt.Printf("🔧 初始化 Git 仓库\n")
 		if err := initGit(serviceDir, config.GitRepo); err != nil {
@@ -275,14 +231,26 @@ func generateService(config *ServiceConfig) error {
 	return nil
 }
 
-// generateFile 生成文件
+func getTemplatePath(src string) string {
+	cwd, _ := os.Getwd()
+	if filepath.Base(cwd) == "service-scaffold" {
+		return src
+	}
+	return filepath.Join("service-scaffold", src)
+}
+
 func generateFile(serviceDir, dst, src string, config *ServiceConfig) error {
-	tmpl, err := template.ParseFiles(src)
+	tmplPath := getTemplatePath(src)
+	tmpl, err := template.New(filepath.Base(tmplPath)).ParseFiles(tmplPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse template %s: %w", tmplPath, err)
 	}
 
 	dstPath := filepath.Join(serviceDir, dst)
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", dstPath, err)
+	}
+
 	file, err := os.Create(dstPath)
 	if err != nil {
 		return err
@@ -292,11 +260,10 @@ func generateFile(serviceDir, dst, src string, config *ServiceConfig) error {
 	return tmpl.Execute(file, config)
 }
 
-// generateGoMod 生成 go.mod
 func generateGoMod(serviceDir string, config *ServiceConfig) error {
 	content := fmt.Sprintf(`module %s
 
-go 1.21
+go 1.24
 
 require (
 	github.com/google/uuid v1.6.0
@@ -305,23 +272,23 @@ require (
 	github.com/spf13/viper v1.18.2
 	go.mongodb.org/mongo-driver v1.13.1
 	go.uber.org/zap v1.27.0
-	google.golang.org/grpc v1.62.0
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/grpc v1.78.0
+	google.golang.org/protobuf v1.36.10
 )
 `, config.ModulePath)
-
 	return os.WriteFile(filepath.Join(serviceDir, "go.mod"), []byte(content), 0644)
 }
 
-// generateMakefile 生成 Makefile
 func generateMakefile(serviceDir string, config *ServiceConfig) error {
-	content := fmt.Sprintf(`.PHONY: proto build run test clean
+	content := `.PHONY: proto build run test clean
 
 proto:
-	protoc --go_out=. --go-grpc_out=. api/proto/*.proto
+	protoc --go_out=. --go_opt=paths=source_relative \
+	       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+	       api/proto/*.proto
 
 build:
-	go build -o bin/%s cmd/server/main.go
+	go build -o bin/server cmd/server/main.go
 
 run:
 	go run cmd/server/main.go
@@ -331,65 +298,12 @@ test:
 
 clean:
 	rm -rf bin/
-`, strings.ToLower(config.ServiceName)+"-service")
-
+`
 	return os.WriteFile(filepath.Join(serviceDir, "Makefile"), []byte(content), 0644)
 }
 
-// generateReadme 生成 README
-func generateReadme(serviceDir string, config *ServiceConfig) error {
-	content := fmt.Sprintf(`# %s Service
-
-%s 微服务
-
-## 快速开始
-
-### 1. 生成 Proto 代码
-
-`+"```bash"+`
-make proto
-`+"```"+`
-
-### 2. 运行服务
-
-`+"```bash"+`
-make run
-`+"```"+`
-
-### 3. 测试
-
-`+"```bash"+`
-make test
-`+"```"+`
-
-## 配置
-
-编辑 `+"`config/config.yaml`"+` 文件配置服务参数。
-
-## 目录结构
-
-- `+"`cmd/`"+` - 应用程序入口
-- `+"`internal/`"+` - 私有代码
-- `+"`pkg/`"+` - 公共代码
-- `+"`api/proto/`"+` - Proto 定义
-- `+"`config/`"+` - 配置文件
-- `+"`migrations/`"+` - 数据库迁移
-
-## 开发
-
-1. 编辑 `+"`api/proto/*.proto`"+` 定义 API
-2. 运行 `+"`make proto`"+` 生成代码
-3. 实现业务逻辑
-4. 编写测试
-5. 构建和部署
-`, config.ServiceName, config.ServiceName)
-
-	return os.WriteFile(filepath.Join(serviceDir, "README.md"), []byte(content), 0644)
-}
-
-// generateDockerfile 生成 Dockerfile
 func generateDockerfile(serviceDir string, config *ServiceConfig) error {
-	content := fmt.Sprintf(`FROM golang:1.21-alpine AS builder
+	content := fmt.Sprintf(`FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -410,111 +324,94 @@ EXPOSE %d
 
 CMD ["./server"]
 `, config.Port)
-
 	return os.WriteFile(filepath.Join(serviceDir, "deployments/docker/Dockerfile"), []byte(content), 0644)
 }
 
-// generateProtoExample 生成 Proto 示例
 func generateProtoExample(serviceDir string, config *ServiceConfig) error {
-	content := fmt.Sprintf(`syntax = "proto3";
+	tmplText := `syntax = "proto3";
 
-package %s;
+package {{ .ServiceName | lower }};
 
-option go_package = "%s/api/proto";
+option go_package = "{{ .ModulePath }}/api/proto";
 
-service %sService {
-  rpc Create(Create%sRequest) returns (Create%sResponse);
-  rpc Get(Get%sRequest) returns (Get%sResponse);
-  rpc Update(Update%sRequest) returns (Update%sResponse);
-  rpc Delete(Delete%sRequest) returns (Delete%sResponse);
-  rpc List(List%sRequest) returns (List%sResponse);
+service {{ .ServiceName }}Service {
+  rpc Create(Create{{ .EntityName }}Request) returns (Create{{ .EntityName }}Response);
+  rpc Get(Get{{ .EntityName }}Request) returns (Get{{ .EntityName }}Response);
+  rpc Update(Update{{ .EntityName }}Request) returns (Update{{ .EntityName }}Response);
+  rpc Delete(Delete{{ .EntityName }}Request) returns (Delete{{ .EntityName }}Response);
+  rpc List(List{{ .EntityName }}Request) returns (List{{ .EntityName }}Response);
 }
 
-message %s {
+message {{ .EntityName }} {
   int64 id = 1;
-  // TODO: 添加字段
 }
 
-message Create%sRequest {
-  // TODO: 添加字段
+message Create{{ .EntityName }}Request {
+  string name = 1;
 }
 
-message Create%sResponse {
+message Create{{ .EntityName }}Response {
   int64 id = 1;
   string message = 2;
 }
 
-message Get%sRequest {
+message Get{{ .EntityName }}Request {
   int64 id = 1;
 }
 
-message Get%sResponse {
+message Get{{ .EntityName }}Response {
   int64 id = 1;
-  // TODO: 添加字段
-  string created_at = 2;
-  string updated_at = 3;
+  string name = 2;
 }
 
-message Update%sRequest {
+message Update{{ .EntityName }}Request {
   int64 id = 1;
-  // TODO: 添加字段
+  string name = 2;
 }
 
-message Update%sResponse {
+message Update{{ .EntityName }}Response {
   bool success = 1;
   string message = 2;
 }
 
-message Delete%sRequest {
+message Delete{{ .EntityName }}Request {
   int64 id = 1;
 }
 
-message Delete%sResponse {
+message Delete{{ .EntityName }}Response {
   bool success = 1;
   string message = 2;
 }
 
-message List%sRequest {
-  int64 page = 1;
-  int64 limit = 2;
+message List{{ .EntityName }}Request {
+  int32 page = 1;
+  int32 limit = 2;
 }
 
-message List%sResponse {
-  repeated %s items = 1;
+message List{{ .EntityName }}Response {
+  repeated {{ .EntityName }} items = 1;
   int64 total = 2;
-  int64 page = 3;
-  int64 limit = 4;
 }
-`,
-		strings.ToLower(config.ServiceName),
-		config.ModulePath,
-		config.ServiceName,
-		config.ServiceName, config.ServiceName,
-		config.ServiceName, config.ServiceName,
-		config.ServiceName, config.ServiceName,
-		config.ServiceName, config.ServiceName,
-		config.ServiceName, config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-	)
-
+`
+	funcMap := template.FuncMap{
+		"lower": strings.ToLower,
+	}
+	
+	tmpl, err := template.New("proto").Funcs(funcMap).Parse(tmplText)
+	if err != nil {
+		return err
+	}
+	
 	protoFile := filepath.Join(serviceDir, "api/proto", strings.ToLower(config.ServiceName)+".proto")
-	return os.WriteFile(protoFile, []byte(content), 0644)
+	file, err := os.Create(protoFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	
+	return tmpl.Execute(file, config)
 }
 
-// initGit 初始化 Git
 func initGit(serviceDir, gitRepo string) error {
 	cmds := [][]string{
 		{"git", "init"},

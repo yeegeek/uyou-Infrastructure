@@ -329,21 +329,34 @@ main() {
             fi
             
             local service_dir="${SERVICES_DIR}/${service_name}"
-            local proto_file="${service_dir}/proto/${service_name}.proto"
+            local proto_file="${service_dir}/api/proto/${service_name}.proto"
             
             if [ -f "$proto_file" ]; then
                 echo "找到 ${service_name} 服务的 proto 文件: ${proto_file}"
                 create_proto "${proto_id}" "$proto_file"
             else
-                # 尝试查找该服务目录下的任何 proto 文件
-                if [ -d "${service_dir}/proto" ]; then
-                    local first_proto=$(find "${service_dir}/proto" -maxdepth 1 -name "*.proto" | head -1)
-                    if [ -n "$first_proto" ]; then
-                        echo "找到 ${service_name} 服务的 proto 文件: ${first_proto}"
-                        create_proto "${proto_id}" "$first_proto"
-                    fi
+                # 兼容旧路径
+                local old_proto_file="${service_dir}/proto/${service_name}.proto"
+                if [ -f "$old_proto_file" ]; then
+                    echo "找到 ${service_name} 服务的 proto 文件 (旧路径): ${old_proto_file}"
+                    create_proto "${proto_id}" "$old_proto_file"
                 else
-                    echo -e "${YELLOW}⚠ ${service_name} 服务的 proto 文件未找到 (期望 proto_id=${proto_id})${NC}"
+                    # 尝试查找该服务目录下的任何 proto 文件
+                    if [ -d "${service_dir}/api/proto" ]; then
+                        local first_proto=$(find "${service_dir}/api/proto" -maxdepth 1 -name "*.proto" | head -1)
+                        if [ -n "$first_proto" ]; then
+                            echo "找到 ${service_name} 服务的 proto 文件: ${first_proto}"
+                            create_proto "${proto_id}" "$first_proto"
+                        fi
+                    elif [ -d "${service_dir}/proto" ]; then
+                        local first_proto=$(find "${service_dir}/proto" -maxdepth 1 -name "*.proto" | head -1)
+                        if [ -n "$first_proto" ]; then
+                            echo "找到 ${service_name} 服务的 proto 文件 (旧路径): ${first_proto}"
+                            create_proto "${proto_id}" "$first_proto"
+                        fi
+                    else
+                        echo -e "${YELLOW}⚠ ${service_name} 服务的 proto 文件未找到 (期望 proto_id=${proto_id})${NC}"
+                    fi
                 fi
             fi
         done
@@ -374,16 +387,16 @@ main() {
         done
     fi
     
-    # 方式 2: 从主配置文件读取（向后兼容）
-    if [ -f "${CONFIG_DIR}/apisix.yaml" ]; then
-        echo "从主配置文件读取路由..."
-        while IFS= read -r route_json; do
-            if [ -n "$route_json" ]; then
-                create_route "$route_json" && ((success_count++))
-                ((route_count++))
-            fi
-        done < <(read_routes_from_yaml "${CONFIG_DIR}/apisix.yaml")
-    fi
+    # 方式 2: 从主配置文件读取（已废弃，迁往 routes/ 目录）
+    # if [ -f "${CONFIG_DIR}/apisix.yaml" ]; then
+    #     echo "从主配置文件读取路由..."
+    #     while IFS= read -r route_json; do
+    #         if [ -n "$route_json" ]; then
+    #             create_route "$route_json" && ((success_count++))
+    #             ((route_count++))
+    #         fi
+    #     done < <(read_routes_from_yaml "${CONFIG_DIR}/apisix.yaml")
+    # fi
     
     # 3. 总结
     echo -e "\n${GREEN}========================================${NC}"

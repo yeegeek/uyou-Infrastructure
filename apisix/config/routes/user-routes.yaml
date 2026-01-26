@@ -1,7 +1,4 @@
 # User Service 路由配置
-# 自动生成于: Mon Jan 26 13:58:25 CST 2026
-# Proto 文件: services/user//proto/user.proto
-# 注意: 这是自动生成的模板，请根据实际需求手动调整
 
 routes:
   - name: user-register
@@ -9,6 +6,10 @@ routes:
     methods: [POST]
     upstream:
       type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
       nodes:
         "user-service:50051": 1
       scheme: grpc
@@ -17,17 +18,20 @@ routes:
         proto_id: "1"
         service: user.UserService
         method: Register
-        show_status_in_body: true
-        pb_option: ["enum_as_name", "int64_as_number", "auto_default_values"]
       cors:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
         allow_headers: "*"
+
   - name: user-login
     uri: /api/v1/users/login
     methods: [POST]
     upstream:
       type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
       nodes:
         "user-service:50051": 1
       scheme: grpc
@@ -36,17 +40,20 @@ routes:
         proto_id: "1"
         service: user.UserService
         method: Login
-        show_status_in_body: true
-        pb_option: ["enum_as_name", "int64_as_number", "auto_default_values"]
       cors:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
         allow_headers: "*"
+
   - name: user-getuser
     uri: /api/v1/users/*
     methods: [GET]
     upstream:
       type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
       nodes:
         "user-service:50051": 1
       scheme: grpc
@@ -56,17 +63,20 @@ routes:
         proto_id: "1"
         service: user.UserService
         method: GetUser
-        show_status_in_body: true
-        pb_option: ["enum_as_name", "int64_as_number", "auto_default_values"]
       cors:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
         allow_headers: "*"
+
   - name: user-updateuser
     uri: /api/v1/users/*
     methods: [PUT]
     upstream:
       type: roundrobin
+      timeout:
+        connect: 60
+        send: 60
+        read: 60
       nodes:
         "user-service:50051": 1
       scheme: grpc
@@ -76,8 +86,6 @@ routes:
         proto_id: "1"
         service: user.UserService
         method: UpdateUser
-        show_status_in_body: true
-        pb_option: ["enum_as_name", "int64_as_number", "auto_default_values"]
       cors:
         allow_origins: "*"
         allow_methods: "GET,POST,PUT,DELETE,OPTIONS"

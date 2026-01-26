@@ -84,7 +84,7 @@ services:
   user-service:
     build:
       context: ./services/user
-      dockerfile: Dockerfile
+      dockerfile: deployments/docker/Dockerfile
     container_name: uyou-user-service
     environment:
       DB_HOST: postgres
