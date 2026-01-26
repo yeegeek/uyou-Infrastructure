@@ -1,0 +1,31 @@
+package middleware
+
+import (
+	"context"
+
+	"google.golang.org/grpc"
+)
+
+// Validator 验证器接口
+type Validator interface {
+	Validate() error
+}
+
+// ValidatorInterceptor 验证拦截器
+func ValidatorInterceptor() grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (interface{}, error) {
+		// 如果请求实现了 Validator 接口，则进行验证
+		if v, ok := req.(Validator); ok {
+			if err := v.Validate(); err != nil {
+				return nil, err
+			}
+		}
+
+		return handler(ctx, req)
+	}
+}

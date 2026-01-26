@@ -1,0 +1,120 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+
+	"{{.ModulePath}}/internal/handler"
+	"{{.ModulePath}}/internal/middleware"
+	"{{.ModulePath}}/internal/repository"
+	"{{.ModulePath}}/internal/service"
+	"{{.ModulePath}}/internal/validator"
+	"{{.ModulePath}}/pkg/config"
+	"{{.ModulePath}}/pkg/database"
+	"{{.ModulePath}}/pkg/logger"
+	pb "{{.ModulePath}}/api/proto"
+)
+
+func main() {
+	// 1. 加载配置
+	cfg, err := config.Load("config/config.yaml")
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	// 2. 初始化日志
+	appLogger, err := logger.New(cfg.Logger)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer appLogger.Sync()
+
+	appLogger.Info("Starting {{.ServiceName}} service", "port", cfg.Server.Port)
+
+	// 3. 初始化数据库{{if .UsePostgreSQL}}
+	db, err := database.NewPostgreSQL(cfg.Database)
+	if err != nil {
+		appLogger.Fatal("Failed to connect to PostgreSQL", "error", err)
+	}
+	defer db.Close()
+	appLogger.Info("Connected to PostgreSQL"){{end}}{{if .UseMongoDB}}
+	
+	mongodb, err := database.NewMongoDB(cfg.MongoDB)
+	if err != nil {
+		appLogger.Fatal("Failed to connect to MongoDB", "error", err)
+	}
+	defer mongodb.Disconnect(context.Background())
+	appLogger.Info("Connected to MongoDB"){{end}}
+
+	// 4. 初始化 Redis
+	redisClient, err := database.NewRedis(cfg.Redis)
+	if err != nil {
+		appLogger.Fatal("Failed to connect to Redis", "error", err)
+	}
+	defer redisClient.Close()
+	appLogger.Info("Connected to Redis")
+
+	// 5. 初始化 Repository 层{{if .UsePostgreSQL}}
+	{{.EntityName}}Repo := repository.New{{.EntityName}}Repository(db, appLogger){{end}}{{if .UseMongoDB}}
+	{{.EntityName}}Repo := repository.New{{.EntityName}}Repository(mongodb, appLogger){{end}}
+	{{.EntityName}}CacheRepo := repository.New{{.EntityName}}CacheRepository(redisClient, appLogger)
+
+	// 6. 初始化 Service 层
+	{{.EntityName}}Service := service.New{{.EntityName}}Service({{.EntityName}}Repo, {{.EntityName}}CacheRepo, appLogger)
+
+	// 7. 初始化 Validator
+	{{.EntityName}}Validator := validator.New{{.EntityName}}Validator()
+
+	// 8. 初始化 Handler 层
+	{{.EntityName}}Handler := handler.New{{.EntityName}}Handler({{.EntityName}}Service, {{.EntityName}}Validator, appLogger)
+
+	// 9. 创建 gRPC 服务器
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			middleware.LoggingInterceptor(appLogger),
+			middleware.RecoveryInterceptor(appLogger),
+			middleware.TracingInterceptor(),
+			middleware.ValidatorInterceptor(),
+		),
+	)
+
+	// 10. 注册服务
+	pb.Register{{.ServiceName}}ServiceServer(grpcServer, {{.EntityName}}Handler)
+
+	// 11. 注册反射服务（用于 grpcurl 测试）
+	if cfg.Server.Mode == "development" {
+		reflection.Register(grpcServer)
+		appLogger.Info("gRPC reflection enabled")
+	}
+
+	// 12. 启动服务器
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Server.Port))
+	if err != nil {
+		appLogger.Fatal("Failed to listen", "error", err)
+	}
+
+	// 13. 优雅关闭
+	go func() {
+		appLogger.Info("{{.ServiceName}} service listening", "port", cfg.Server.Port)
+		if err := grpcServer.Serve(lis); err != nil {
+			appLogger.Fatal("Failed to serve", "error", err)
+		}
+	}()
+
+	// 14. 等待中断信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	appLogger.Info("Shutting down server...")
+	grpcServer.GracefulStop()
+	appLogger.Info("Server stopped")
+}

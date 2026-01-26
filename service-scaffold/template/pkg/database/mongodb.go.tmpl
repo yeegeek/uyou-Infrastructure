@@ -1,0 +1,37 @@
+{{if .UseMongoDB}}package database
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"{{.ModulePath}}/pkg/config"
+)
+
+// NewMongoDB 创建 MongoDB 连接
+func NewMongoDB(config config.MongoDBConfig) (*mongo.Database, error) {
+	// 创建客户端选项
+	clientOptions := options.Client().ApplyURI(config.URI)
+
+	// 设置超时
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(config.Timeout)*time.Second)
+	defer cancel()
+
+	// 连接到 MongoDB
+	client, err := mongo.Connect(ctx, clientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+
+	// 测试连接
+	if err := client.Ping(ctx, nil); err != nil {
+		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
+	}
+
+	// 返回数据库实例
+	return client.Database(config.Database), nil
+}
+{{end}}

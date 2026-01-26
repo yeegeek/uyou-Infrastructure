@@ -1,0 +1,48 @@
+package middleware
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+)
+
+// TracingInterceptor 追踪拦截器
+func TracingInterceptor() grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (interface{}, error) {
+		// 从 metadata 提取 trace_id
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			md = metadata.New(nil)
+		}
+
+		traceID := md.Get("x-trace-id")
+		if len(traceID) == 0 {
+			// 生成新的 trace_id
+			traceID = []string{uuid.New().String()}
+		}
+
+		// 注入 trace_id 到 context
+		ctx = context.WithValue(ctx, "trace_id", traceID[0])
+
+		// 将 trace_id 添加到响应 metadata
+		header := metadata.Pairs("x-trace-id", traceID[0])
+		grpc.SendHeader(ctx, header)
+
+		return handler(ctx, req)
+	}
+}
+
+// GetTraceID 从 context 获取 trace_id
+func GetTraceID(ctx context.Context) string {
+	if traceID, ok := ctx.Value("trace_id").(string); ok {
+		return traceID
+	}
+	return ""
+}

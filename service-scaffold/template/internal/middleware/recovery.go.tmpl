@@ -1,0 +1,35 @@
+package middleware
+
+import (
+	"context"
+	"runtime/debug"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"{{.ModulePath}}/pkg/logger"
+)
+
+// RecoveryInterceptor 恢复拦截器
+func RecoveryInterceptor(log *logger.Logger) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (resp interface{}, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("Panic recovered",
+					"method", info.FullMethod,
+					"panic", r,
+					"stack", string(debug.Stack()))
+				
+				err = status.Error(codes.Internal, "Internal server error")
+			}
+		}()
+
+		return handler(ctx, req)
+	}
+}

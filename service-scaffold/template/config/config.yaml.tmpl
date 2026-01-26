@@ -1,0 +1,38 @@
+server:
+  port: {{.Port}}
+  mode: development  # development, production
+{{if .UsePostgreSQL}}
+database:
+  host: ${DB_HOST:localhost}
+  port: ${DB_PORT:5432}
+  user: ${DB_USER:postgres}
+  password: ${DB_PASSWORD:postgres}
+  database: ${DB_NAME:{{.DatabaseName}}}
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 300  # 5 minutes
+{{end}}{{if .UseMongoDB}}
+mongodb:
+  uri: ${MONGO_URI:mongodb://root:example@localhost:27017}
+  database: ${MONGO_DATABASE:{{.DatabaseName}}}
+  timeout: 10  # seconds
+{{end}}
+redis:
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+  password: ${REDIS_PASSWORD:}
+  db: {{.RedisDB}}
+
+logger:
+  level: debug  # debug, info, warn, error
+  format: console  # json, console
+  output: stdout  # stdout, file
+  file: logs/app.log
+{{if .UseQueue}}
+queue:
+  type: rabbitmq  # rabbitmq, kafka
+  host: ${QUEUE_HOST:localhost}
+  port: ${QUEUE_PORT:5672}
+  user: ${QUEUE_USER:guest}
+  password: ${QUEUE_PASSWORD:guest}
+{{end}}

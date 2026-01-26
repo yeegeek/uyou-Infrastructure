@@ -1,0 +1,159 @@
+{{if .UsePostgreSQL}}package repository
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+
+	"{{.ModulePath}}/internal/model"
+	"{{.ModulePath}}/pkg/errors"
+	"{{.ModulePath}}/pkg/logger"
+)
+
+// {{.EntityName}}Repository {{.EntityName}} 仓储
+type {{.EntityName}}Repository struct {
+	db     *sql.DB
+	logger *logger.Logger
+}
+
+// New{{.EntityName}}Repository 创建新的 {{.EntityName}} 仓储
+func New{{.EntityName}}Repository(db *sql.DB, logger *logger.Logger) *{{.EntityName}}Repository {
+	return &{{.EntityName}}Repository{
+		db:     db,
+		logger: logger,
+	}
+}
+
+// Create 创建{{.EntityName}}
+func (r *{{.EntityName}}Repository) Create(ctx context.Context, entity *model.{{.EntityName}}) error {
+	query := `
+		INSERT INTO {{.TableName}} (created_at, updated_at)
+		VALUES ($1, $2)
+		RETURNING id
+	`
+
+	err := r.db.QueryRowContext(ctx, query,
+		entity.CreatedAt,
+		entity.UpdatedAt,
+	).Scan(&entity.ID)
+
+	if err != nil {
+		r.logger.Error("Failed to create {{.EntityName}}", "error", err)
+		return fmt.Errorf("failed to create {{.EntityName}}: %w", err)
+	}
+
+	return nil
+}
+
+// FindByID 根据 ID 查找{{.EntityName}}
+func (r *{{.EntityName}}Repository) FindByID(ctx context.Context, id int64) (*model.{{.EntityName}}, error) {
+	query := `
+		SELECT id, created_at, updated_at
+		FROM {{.TableName}}
+		WHERE id = $1
+	`
+
+	entity := &model.{{.EntityName}}{}
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&entity.ID,
+		&entity.CreatedAt,
+		&entity.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, errors.Err{{.EntityName}}NotFound
+	}
+	if err != nil {
+		r.logger.Error("Failed to find {{.EntityName}}", "id", id, "error", err)
+		return nil, fmt.Errorf("failed to find {{.EntityName}}: %w", err)
+	}
+
+	return entity, nil
+}
+
+// Update 更新{{.EntityName}}
+func (r *{{.EntityName}}Repository) Update(ctx context.Context, entity *model.{{.EntityName}}) error {
+	query := `
+		UPDATE {{.TableName}}
+		SET updated_at = $1
+		WHERE id = $2
+	`
+
+	result, err := r.db.ExecContext(ctx, query,
+		entity.UpdatedAt,
+		entity.ID,
+	)
+
+	if err != nil {
+		r.logger.Error("Failed to update {{.EntityName}}", "id", entity.ID, "error", err)
+		return fmt.Errorf("failed to update {{.EntityName}}: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.Err{{.EntityName}}NotFound
+	}
+
+	return nil
+}
+
+// Delete 删除{{.EntityName}}
+func (r *{{.EntityName}}Repository) Delete(ctx context.Context, id int64) error {
+	query := `DELETE FROM {{.TableName}} WHERE id = $1`
+
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		r.logger.Error("Failed to delete {{.EntityName}}", "id", id, "error", err)
+		return fmt.Errorf("failed to delete {{.EntityName}}: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.Err{{.EntityName}}NotFound
+	}
+
+	return nil
+}
+
+// List 列出{{.EntityName}}
+func (r *{{.EntityName}}Repository) List(ctx context.Context, offset, limit int) ([]*model.{{.EntityName}}, int, error) {
+	// 查询总数
+	var total int
+	countQuery := `SELECT COUNT(*) FROM {{.TableName}}`
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
+		r.logger.Error("Failed to count {{.EntityName}}", "error", err)
+		return nil, 0, fmt.Errorf("failed to count {{.EntityName}}: %w", err)
+	}
+
+	// 查询列表
+	query := `
+		SELECT id, created_at, updated_at
+		FROM {{.TableName}}
+		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		r.logger.Error("Failed to list {{.EntityName}}", "error", err)
+		return nil, 0, fmt.Errorf("failed to list {{.EntityName}}: %w", err)
+	}
+	defer rows.Close()
+
+	entities := make([]*model.{{.EntityName}}, 0)
+	for rows.Next() {
+		entity := &model.{{.EntityName}}{}
+		if err := rows.Scan(
+			&entity.ID,
+			&entity.CreatedAt,
+			&entity.UpdatedAt,
+		); err != nil {
+			r.logger.Error("Failed to scan {{.EntityName}}", "error", err)
+			continue
+		}
+		entities = append(entities, entity)
+	}
+
+	return entities, total, nil
+}
+{{end}}

@@ -1,8 +1,25 @@
-.PHONY: proto proto-update update-apisix-merge generate-route validate-config cleanup-old-routes clean build run stop restart logs help
+.PHONY: proto proto-update update-apisix-merge generate-route validate-config cleanup-old-routes clean build run stop restart logs new-service help
+
+# 生成新的微服务
+new-service:
+	@echo "🚀 生成新的微服务..."
+	@cd service-scaffold && go run generator.go
+	@echo ""
+	@echo "✅ 服务生成成功！"
+	@echo ""
+	@echo "📝 后续步骤："
+	@echo "   1. 进入新服务目录"
+	@echo "   2. 编辑 api/proto/*.proto 定义 API"
+	@echo "   3. 运行 'make proto' 生成代码"
+	@echo "   4. 实现业务逻辑"
+	@echo "   5. 构建和运行服务"
 
 # 帮助信息
 help:
 	@echo "可用命令:"
+	@echo ""
+	@echo "微服务生成:"
+	@echo "  make new-service         - 生成新的微服务（交互式）"
 	@echo ""
 	@echo "APISIX 配置管理:"
 	@echo "  make update-apisix-merge - 合并并更新 APISIX 配置（从 apisix/config/routes/ 读取）"

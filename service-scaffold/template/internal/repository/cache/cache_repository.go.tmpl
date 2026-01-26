@@ -1,0 +1,86 @@
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+
+	"{{.ModulePath}}/internal/model"
+	"{{.ModulePath}}/pkg/logger"
+)
+
+// {{.EntityName}}CacheRepository {{.EntityName}} 缓存仓储
+type {{.EntityName}}CacheRepository struct {
+	redis  *redis.Client
+	logger *logger.Logger
+	ttl    time.Duration
+}
+
+// New{{.EntityName}}CacheRepository 创建新的 {{.EntityName}} 缓存仓储
+func New{{.EntityName}}CacheRepository(redis *redis.Client, logger *logger.Logger) *{{.EntityName}}CacheRepository {
+	return &{{.EntityName}}CacheRepository{
+		redis:  redis,
+		logger: logger,
+		ttl:    24 * time.Hour, // 默认 24 小时
+	}
+}
+
+// Get 获取{{.EntityName}}
+func (r *{{.EntityName}}CacheRepository) Get(ctx context.Context, id int64) (*model.{{.EntityName}}, error) {
+	key := r.key(id)
+
+	data, err := r.redis.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return nil, nil // 缓存未命中
+	}
+	if err != nil {
+		r.logger.Error("Failed to get from cache", "key", key, "error", err)
+		return nil, err
+	}
+
+	var entity model.{{.EntityName}}
+	if err := json.Unmarshal([]byte(data), &entity); err != nil {
+		r.logger.Error("Failed to unmarshal cache data", "key", key, "error", err)
+		return nil, err
+	}
+
+	return &entity, nil
+}
+
+// Set 设置{{.EntityName}}
+func (r *{{.EntityName}}CacheRepository) Set(ctx context.Context, entity *model.{{.EntityName}}) error {
+	key := r.key(entity.ID)
+
+	data, err := json.Marshal(entity)
+	if err != nil {
+		r.logger.Error("Failed to marshal entity", "id", entity.ID, "error", err)
+		return err
+	}
+
+	if err := r.redis.Set(ctx, key, data, r.ttl).Err(); err != nil {
+		r.logger.Error("Failed to set cache", "key", key, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+// Delete 删除{{.EntityName}}
+func (r *{{.EntityName}}CacheRepository) Delete(ctx context.Context, id int64) error {
+	key := r.key(id)
+
+	if err := r.redis.Del(ctx, key).Err(); err != nil {
+		r.logger.Error("Failed to delete cache", "key", key, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+// key 生成缓存键
+func (r *{{.EntityName}}CacheRepository) key(id int64) string {
+	return fmt.Sprintf("{{.CachePrefix}}:%d", id)
+}

@@ -1,0 +1,84 @@
+package errors
+
+import (
+	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+// Error 自定义错误
+type Error struct {
+	Code    int
+	Message string
+}
+
+// Error 实现 error 接口
+func (e *Error) Error() string {
+	return fmt.Sprintf("[%d] %s", e.Code, e.Message)
+}
+
+// NewError 创建新错误
+func NewError(code int, message string) *Error {
+	return &Error{
+		Code:    code,
+		Message: message,
+	}
+}
+
+// 通用错误
+var (
+	ErrInternal          = NewError(10000, "Internal server error")
+	ErrInvalidArgument   = NewError(10001, "Invalid argument")
+	ErrNotFound          = NewError(10002, "Resource not found")
+	ErrAlreadyExists     = NewError(10003, "Resource already exists")
+	ErrPermissionDenied  = NewError(10004, "Permission denied")
+	ErrUnauthenticated   = NewError(10005, "Unauthenticated")
+)
+
+// {{.ServiceName}} 特定错误
+var (
+	Err{{.EntityName}}NotFound      = NewError(20001, "{{.EntityName}} not found")
+	Err{{.EntityName}}AlreadyExists = NewError(20002, "{{.EntityName}} already exists")
+	ErrInvalidPassword              = NewError(20003, "Invalid password")
+)
+
+// ToGRPCError 转换为 gRPC 错误
+func ToGRPCError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// 如果已经是 gRPC 错误，直接返回
+	if _, ok := status.FromError(err); ok {
+		return err
+	}
+
+	// 如果是自定义错误，转换为 gRPC 错误
+	if e, ok := err.(*Error); ok {
+		return status.Error(mapErrorCode(e.Code), e.Message)
+	}
+
+	// 其他错误，返回内部错误
+	return status.Error(codes.Internal, err.Error())
+}
+
+// mapErrorCode 映射错误码到 gRPC 状态码
+func mapErrorCode(code int) codes.Code {
+	switch {
+	case code == 10001:
+		return codes.InvalidArgument
+	case code == 10002:
+		return codes.NotFound
+	case code == 10003:
+		return codes.AlreadyExists
+	case code == 10004:
+		return codes.PermissionDenied
+	case code == 10005:
+		return codes.Unauthenticated
+	case code >= 20001 && code <= 20999:
+		return codes.FailedPrecondition
+	default:
+		return codes.Internal
+	}
+}

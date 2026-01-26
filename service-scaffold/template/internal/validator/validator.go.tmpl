@@ -1,0 +1,57 @@
+package validator
+
+import (
+	"fmt"
+
+	pb "{{.ModulePath}}/api/proto"
+)
+
+// {{.EntityName}}Validator {{.EntityName}} 验证器
+type {{.EntityName}}Validator struct{}
+
+// New{{.EntityName}}Validator 创建新的 {{.EntityName}} 验证器
+func New{{.EntityName}}Validator() *{{.EntityName}}Validator {
+	return &{{.EntityName}}Validator{}
+}
+
+// ValidateCreate 验证创建请求
+func (v *{{.EntityName}}Validator) ValidateCreate(req *pb.Create{{.EntityName}}Request) error {
+	// TODO: 添加验证逻辑
+	return nil
+}
+
+// ValidateGet 验证获取请求
+func (v *{{.EntityName}}Validator) ValidateGet(req *pb.Get{{.EntityName}}Request) error {
+	if req.Id <= 0 {
+		return fmt.Errorf("invalid id: %d", req.Id)
+	}
+	return nil
+}
+
+// ValidateUpdate 验证更新请求
+func (v *{{.EntityName}}Validator) ValidateUpdate(req *pb.Update{{.EntityName}}Request) error {
+	if req.Id <= 0 {
+		return fmt.Errorf("invalid id: %d", req.Id)
+	}
+	// TODO: 添加其他验证逻辑
+	return nil
+}
+
+// ValidateDelete 验证删除请求
+func (v *{{.EntityName}}Validator) ValidateDelete(req *pb.Delete{{.EntityName}}Request) error {
+	if req.Id <= 0 {
+		return fmt.Errorf("invalid id: %d", req.Id)
+	}
+	return nil
+}
+
+// ValidateList 验证列表请求
+func (v *{{.EntityName}}Validator) ValidateList(req *pb.List{{.EntityName}}Request) error {
+	if req.Page <= 0 {
+		return fmt.Errorf("invalid page: %d", req.Page)
+	}
+	if req.Limit <= 0 || req.Limit > 100 {
+		return fmt.Errorf("invalid limit: %d (must be between 1 and 100)", req.Limit)
+	}
+	return nil
+}

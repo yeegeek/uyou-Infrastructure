@@ -1,0 +1,140 @@
+package handler
+
+import (
+	"context"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"{{.ModulePath}}/internal/service"
+	"{{.ModulePath}}/internal/validator"
+	"{{.ModulePath}}/pkg/errors"
+	"{{.ModulePath}}/pkg/logger"
+	pb "{{.ModulePath}}/api/proto"
+)
+
+// {{.EntityName}}Handler {{.EntityName}} 处理器
+type {{.EntityName}}Handler struct {
+	pb.Unimplemented{{.ServiceName}}ServiceServer
+	service   *service.{{.EntityName}}Service
+	validator *validator.{{.EntityName}}Validator
+	logger    *logger.Logger
+}
+
+// New{{.EntityName}}Handler 创建新的 {{.EntityName}} 处理器
+func New{{.EntityName}}Handler(
+	service *service.{{.EntityName}}Service,
+	validator *validator.{{.EntityName}}Validator,
+	logger *logger.Logger,
+) *{{.EntityName}}Handler {
+	return &{{.EntityName}}Handler{
+		service:   service,
+		validator: validator,
+		logger:    logger,
+	}
+}
+
+// Create 创建{{.EntityName}}
+func (h *{{.EntityName}}Handler) Create(ctx context.Context, req *pb.Create{{.EntityName}}Request) (*pb.Create{{.EntityName}}Response, error) {
+	h.logger.Info("Create{{.EntityName}} request received")
+
+	// 1. 参数验证
+	if err := h.validator.ValidateCreate(req); err != nil {
+		h.logger.Warn("Invalid create request", "error", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// 2. 调用 Service
+	result, err := h.service.Create(ctx, req)
+	if err != nil {
+		h.logger.Error("Failed to create {{.EntityName}}", "error", err)
+		return nil, errors.ToGRPCError(err)
+	}
+
+	h.logger.Info("{{.EntityName}} created successfully", "id", result.Id)
+	return result, nil
+}
+
+// Get 获取{{.EntityName}}
+func (h *{{.EntityName}}Handler) Get(ctx context.Context, req *pb.Get{{.EntityName}}Request) (*pb.Get{{.EntityName}}Response, error) {
+	h.logger.Info("Get{{.EntityName}} request received", "id", req.Id)
+
+	// 1. 参数验证
+	if err := h.validator.ValidateGet(req); err != nil {
+		h.logger.Warn("Invalid get request", "error", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// 2. 调用 Service
+	result, err := h.service.Get(ctx, req)
+	if err != nil {
+		h.logger.Error("Failed to get {{.EntityName}}", "id", req.Id, "error", err)
+		return nil, errors.ToGRPCError(err)
+	}
+
+	h.logger.Info("{{.EntityName}} retrieved successfully", "id", req.Id)
+	return result, nil
+}
+
+// Update 更新{{.EntityName}}
+func (h *{{.EntityName}}Handler) Update(ctx context.Context, req *pb.Update{{.EntityName}}Request) (*pb.Update{{.EntityName}}Response, error) {
+	h.logger.Info("Update{{.EntityName}} request received", "id", req.Id)
+
+	// 1. 参数验证
+	if err := h.validator.ValidateUpdate(req); err != nil {
+		h.logger.Warn("Invalid update request", "error", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// 2. 调用 Service
+	result, err := h.service.Update(ctx, req)
+	if err != nil {
+		h.logger.Error("Failed to update {{.EntityName}}", "id", req.Id, "error", err)
+		return nil, errors.ToGRPCError(err)
+	}
+
+	h.logger.Info("{{.EntityName}} updated successfully", "id", req.Id)
+	return result, nil
+}
+
+// Delete 删除{{.EntityName}}
+func (h *{{.EntityName}}Handler) Delete(ctx context.Context, req *pb.Delete{{.EntityName}}Request) (*pb.Delete{{.EntityName}}Response, error) {
+	h.logger.Info("Delete{{.EntityName}} request received", "id", req.Id)
+
+	// 1. 参数验证
+	if err := h.validator.ValidateDelete(req); err != nil {
+		h.logger.Warn("Invalid delete request", "error", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// 2. 调用 Service
+	result, err := h.service.Delete(ctx, req)
+	if err != nil {
+		h.logger.Error("Failed to delete {{.EntityName}}", "id", req.Id, "error", err)
+		return nil, errors.ToGRPCError(err)
+	}
+
+	h.logger.Info("{{.EntityName}} deleted successfully", "id", req.Id)
+	return result, nil
+}
+
+// List 列出{{.EntityName}}
+func (h *{{.EntityName}}Handler) List(ctx context.Context, req *pb.List{{.EntityName}}Request) (*pb.List{{.EntityName}}Response, error) {
+	h.logger.Info("List{{.EntityName}} request received", "page", req.Page, "limit", req.Limit)
+
+	// 1. 参数验证
+	if err := h.validator.ValidateList(req); err != nil {
+		h.logger.Warn("Invalid list request", "error", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// 2. 调用 Service
+	result, err := h.service.List(ctx, req)
+	if err != nil {
+		h.logger.Error("Failed to list {{.EntityName}}", "error", err)
+		return nil, errors.ToGRPCError(err)
+	}
+
+	h.logger.Info("{{.EntityName}} list retrieved successfully", "count", len(result.Items))
+	return result, nil
+}

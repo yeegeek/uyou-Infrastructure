@@ -1,0 +1,322 @@
+routes:
+  # ==================== User Service 路由 ====================
+  
+  # 用户注册
+  - uri: /api/v1/users/register
+    name: user-register
+    methods: [POST]
+    upstream:
+      type: roundrobin
+      nodes:
+        "user-service:50051": 1
+      scheme: grpc
+    plugins:
+      grpc-transcode:
+        proto_id: "1"
+        service: user.UserService
+        method: Register
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "*"
+      limit-count:
+        count: 100
+        time_window: 60
+        rejected_code: 429
+  
+  # 用户登录
+  - uri: /api/v1/users/login
+    name: user-login
+    methods: [POST]
+    upstream:
+      type: roundrobin
+      nodes:
+        "user-service:50051": 1
+      scheme: grpc
+    plugins:
+      grpc-transcode:
+        proto_id: "1"
+        service: user.UserService
+        method: Login
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "*"
+      limit-count:
+        count: 50
+        time_window: 60
+        rejected_code: 429
+  
+  # 获取用户信息
+  - uri: /api/v1/users/*
+    name: user-get
+    methods: [GET]
+    upstream:
+      type: roundrobin
+      nodes:
+        "user-service:50051": 1
+      scheme: grpc
+    plugins:
+      grpc-transcode:
+        proto_id: "1"
+        service: user.UserService
+        method: GetUser
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "*"
+  
+  # ==================== Order Service 路由 ====================
+  
+  # 创建订单
+  - uri: /api/v1/orders
+    name: order-create
+    methods: [POST]
+    upstream:
+      type: roundrobin
+      nodes:
+        "order-service:50052": 1
+      scheme: grpc
+    plugins:
+      grpc-transcode:
+        proto_id: "2"
+        service: order.OrderService
+        method: CreateOrder
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "*"
+      limit-count:
+        count: 50
+        time_window: 60
+        rejected_code: 429
+  
+  # 获取订单详情
+  - uri: /api/v1/orders/*
+    name: order-get
+    methods: [GET]
+    upstream:
+      type: roundrobin
+      nodes:
+        "order-service:50052": 1
+      scheme: grpc
+    plugins:
+      grpc-transcode:
+        proto_id: "2"
+        service: order.OrderService
+        method: GetOrder
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "*"
+  
+  # ==================== Feed Service 路由 ====================
+  
+  # 创建动态
+  - uri: /api/v1/feeds
+    name: feed-create
+    methods: [POST]
+    upstream:
+      type: roundrobin
+      nodes:
+        "feed-service:50053": 1
+      scheme: grpc
+    plugins:
+      grpc-transcode:
+        proto_id: "3"
+        service: feed.FeedService
+        method: CreateFeed
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "*"
+      limit-count:
+        count: 100
+        time_window: 60
+        rejected_code: 429
+  
+  # 获取动态详情
+  - uri: /api/v1/feeds/*
+    name: feed-get
+    methods: [GET]
+    upstream:
+      type: roundrobin
+      nodes:
+        "feed-service:50053": 1
+      scheme: grpc
+    plugins:
+      grpc-transcode:
+        proto_id: "3"
+        service: feed.FeedService
+        method: GetFeed
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "*"
+
+proto:
+  - id: "1"
+    content: |
+      syntax = "proto3";
+      package user;
+      service UserService {
+        rpc Register(RegisterRequest) returns (RegisterResponse);
+        rpc Login(LoginRequest) returns (LoginResponse);
+        rpc GetUser(GetUserRequest) returns (GetUserResponse);
+        rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+      }
+      message RegisterRequest {
+        string username = 1;
+        string email = 2;
+        string password = 3;
+      }
+      message RegisterResponse {
+        int64 user_id = 1;
+        string message = 2;
+      }
+      message LoginRequest {
+        string username = 1;
+        string password = 2;
+      }
+      message LoginResponse {
+        string token = 1;
+        int64 user_id = 2;
+        string username = 3;
+      }
+      message GetUserRequest {
+        int64 user_id = 1;
+      }
+      message GetUserResponse {
+        int64 user_id = 1;
+        string username = 2;
+        string email = 3;
+        string avatar = 4;
+        string created_at = 5;
+      }
+      message UpdateUserRequest {
+        int64 user_id = 1;
+        string email = 2;
+        string avatar = 3;
+      }
+      message UpdateUserResponse {
+        bool success = 1;
+        string message = 2;
+      }
+  
+  - id: "2"
+    content: |
+      syntax = "proto3";
+      package order;
+      service OrderService {
+        rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+        rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+        rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+        rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (UpdateOrderStatusResponse);
+      }
+      message OrderItem {
+        int64 product_id = 1;
+        string product_name = 2;
+        int32 quantity = 3;
+        double price = 4;
+      }
+      message CreateOrderRequest {
+        int64 user_id = 1;
+        repeated OrderItem items = 2;
+        double total_amount = 3;
+      }
+      message CreateOrderResponse {
+        int64 order_id = 1;
+        string order_no = 2;
+        string message = 3;
+      }
+      message GetOrderRequest {
+        int64 order_id = 1;
+      }
+      message GetOrderResponse {
+        int64 order_id = 1;
+        string order_no = 2;
+        int64 user_id = 3;
+        repeated OrderItem items = 4;
+        double total_amount = 5;
+        string status = 6;
+        string created_at = 7;
+      }
+      message ListOrdersRequest {
+        int64 user_id = 1;
+        int32 page = 2;
+        int32 page_size = 3;
+      }
+      message ListOrdersResponse {
+        repeated GetOrderResponse orders = 1;
+        int32 total = 2;
+      }
+      message UpdateOrderStatusRequest {
+        int64 order_id = 1;
+        string status = 2;
+      }
+      message UpdateOrderStatusResponse {
+        bool success = 1;
+        string message = 2;
+      }
+  
+  - id: "3"
+    content: |
+      syntax = "proto3";
+      package feed;
+      service FeedService {
+        rpc CreateFeed(CreateFeedRequest) returns (CreateFeedResponse);
+        rpc GetFeed(GetFeedRequest) returns (GetFeedResponse);
+        rpc ListFeeds(ListFeedsRequest) returns (ListFeedsResponse);
+        rpc DeleteFeed(DeleteFeedRequest) returns (DeleteFeedResponse);
+        rpc LikeFeed(LikeFeedRequest) returns (LikeFeedResponse);
+      }
+      message CreateFeedRequest {
+        int64 user_id = 1;
+        string content = 2;
+        repeated string images = 3;
+        string location = 4;
+      }
+      message CreateFeedResponse {
+        string feed_id = 1;
+        string message = 2;
+      }
+      message GetFeedRequest {
+        string feed_id = 1;
+      }
+      message GetFeedResponse {
+        string feed_id = 1;
+        int64 user_id = 2;
+        string content = 3;
+        repeated string images = 4;
+        string location = 5;
+        int32 likes = 6;
+        int32 comments = 7;
+        string created_at = 8;
+      }
+      message ListFeedsRequest {
+        int64 user_id = 1;
+        int32 page = 2;
+        int32 page_size = 3;
+      }
+      message ListFeedsResponse {
+        repeated GetFeedResponse feeds = 1;
+        int32 total = 2;
+      }
+      message DeleteFeedRequest {
+        string feed_id = 1;
+        int64 user_id = 2;
+      }
+      message DeleteFeedResponse {
+        bool success = 1;
+        string message = 2;
+      }
+      message LikeFeedRequest {
+        string feed_id = 1;
+        int64 user_id = 2;
+      }
+      message LikeFeedResponse {
+        bool success = 1;
+        int32 total_likes = 2;
+      }
+
+#END

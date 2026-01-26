@@ -1,0 +1,193 @@
+package service
+
+import (
+	"context"
+	"time"
+
+	"{{.ModulePath}}/internal/model"
+	"{{.ModulePath}}/internal/repository"
+	"{{.ModulePath}}/pkg/errors"
+	"{{.ModulePath}}/pkg/logger"
+	pb "{{.ModulePath}}/api/proto"
+)
+
+// {{.EntityName}}Service {{.EntityName}} 服务
+type {{.EntityName}}Service struct {
+	repo      *repository.{{.EntityName}}Repository
+	cacheRepo *repository.{{.EntityName}}CacheRepository
+	logger    *logger.Logger
+}
+
+// New{{.EntityName}}Service 创建新的 {{.EntityName}} 服务
+func New{{.EntityName}}Service(
+	repo *repository.{{.EntityName}}Repository,
+	cacheRepo *repository.{{.EntityName}}CacheRepository,
+	logger *logger.Logger,
+) *{{.EntityName}}Service {
+	return &{{.EntityName}}Service{
+		repo:      repo,
+		cacheRepo: cacheRepo,
+		logger:    logger,
+	}
+}
+
+// Create 创建{{.EntityName}}
+func (s *{{.EntityName}}Service) Create(ctx context.Context, req *pb.Create{{.EntityName}}Request) (*pb.Create{{.EntityName}}Response, error) {
+	s.logger.Info("Creating {{.EntityName}}")
+
+	// 1. 构建模型
+	entity := &model.{{.EntityName}}{
+		// TODO: 填充字段
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// 2. 保存到数据库
+	if err := s.repo.Create(ctx, entity); err != nil {
+		s.logger.Error("Failed to create {{.EntityName}}", "error", err)
+		return nil, err
+	}
+
+	// 3. 缓存
+	if err := s.cacheRepo.Set(ctx, entity); err != nil {
+		s.logger.Warn("Failed to cache {{.EntityName}}", "error", err)
+		// 缓存失败不影响主流程
+	}
+
+	return &pb.Create{{.EntityName}}Response{
+		Id:      entity.ID,
+		Message: "{{.EntityName}} created successfully",
+	}, nil
+}
+
+// Get 获取{{.EntityName}}
+func (s *{{.EntityName}}Service) Get(ctx context.Context, req *pb.Get{{.EntityName}}Request) (*pb.Get{{.EntityName}}Response, error) {
+	s.logger.Info("Getting {{.EntityName}}", "id", req.Id)
+
+	// 1. 尝试从缓存获取
+	cached, err := s.cacheRepo.Get(ctx, req.Id)
+	if err == nil && cached != nil {
+		s.logger.Debug("Cache hit", "id", req.Id)
+		return s.toProto(cached), nil
+	}
+
+	// 2. 从数据库获取
+	entity, err := s.repo.FindByID(ctx, req.Id)
+	if err != nil {
+		s.logger.Error("Failed to get {{.EntityName}}", "id", req.Id, "error", err)
+		return nil, err
+	}
+
+	// 3. 写入缓存
+	if err := s.cacheRepo.Set(ctx, entity); err != nil {
+		s.logger.Warn("Failed to cache {{.EntityName}}", "error", err)
+	}
+
+	return s.toProto(entity), nil
+}
+
+// Update 更新{{.EntityName}}
+func (s *{{.EntityName}}Service) Update(ctx context.Context, req *pb.Update{{.EntityName}}Request) (*pb.Update{{.EntityName}}Response, error) {
+	s.logger.Info("Updating {{.EntityName}}", "id", req.Id)
+
+	// 1. 检查是否存在
+	entity, err := s.repo.FindByID(ctx, req.Id)
+	if err != nil {
+		s.logger.Error("{{.EntityName}} not found", "id", req.Id)
+		return nil, errors.Err{{.EntityName}}NotFound
+	}
+
+	// 2. 更新字段
+	// TODO: 更新字段
+	entity.UpdatedAt = time.Now()
+
+	// 3. 保存到数据库
+	if err := s.repo.Update(ctx, entity); err != nil {
+		s.logger.Error("Failed to update {{.EntityName}}", "id", req.Id, "error", err)
+		return nil, err
+	}
+
+	// 4. 删除缓存
+	if err := s.cacheRepo.Delete(ctx, req.Id); err != nil {
+		s.logger.Warn("Failed to delete cache", "error", err)
+	}
+
+	return &pb.Update{{.EntityName}}Response{
+		Success: true,
+		Message: "{{.EntityName}} updated successfully",
+	}, nil
+}
+
+// Delete 删除{{.EntityName}}
+func (s *{{.EntityName}}Service) Delete(ctx context.Context, req *pb.Delete{{.EntityName}}Request) (*pb.Delete{{.EntityName}}Response, error) {
+	s.logger.Info("Deleting {{.EntityName}}", "id", req.Id)
+
+	// 1. 检查是否存在
+	_, err := s.repo.FindByID(ctx, req.Id)
+	if err != nil {
+		s.logger.Error("{{.EntityName}} not found", "id", req.Id)
+		return nil, errors.Err{{.EntityName}}NotFound
+	}
+
+	// 2. 从数据库删除
+	if err := s.repo.Delete(ctx, req.Id); err != nil {
+		s.logger.Error("Failed to delete {{.EntityName}}", "id", req.Id, "error", err)
+		return nil, err
+	}
+
+	// 3. 删除缓存
+	if err := s.cacheRepo.Delete(ctx, req.Id); err != nil {
+		s.logger.Warn("Failed to delete cache", "error", err)
+	}
+
+	return &pb.Delete{{.EntityName}}Response{
+		Success: true,
+		Message: "{{.EntityName}} deleted successfully",
+	}, nil
+}
+
+// List 列出{{.EntityName}}
+func (s *{{.EntityName}}Service) List(ctx context.Context, req *pb.List{{.EntityName}}Request) (*pb.List{{.EntityName}}Response, error) {
+	s.logger.Info("Listing {{.EntityName}}", "page", req.Page, "limit", req.Limit)
+
+	// 1. 计算偏移量
+	offset := (req.Page - 1) * req.Limit
+
+	// 2. 从数据库查询
+	entities, total, err := s.repo.List(ctx, int(offset), int(req.Limit))
+	if err != nil {
+		s.logger.Error("Failed to list {{.EntityName}}", "error", err)
+		return nil, err
+	}
+
+	// 3. 转换为 Proto
+	items := make([]*pb.{{.EntityName}}, 0, len(entities))
+	for _, entity := range entities {
+		items = append(items, s.toProtoItem(entity))
+	}
+
+	return &pb.List{{.EntityName}}Response{
+		Items: items,
+		Total: int64(total),
+		Page:  req.Page,
+		Limit: req.Limit,
+	}, nil
+}
+
+// toProto 转换为 Proto 响应
+func (s *{{.EntityName}}Service) toProto(entity *model.{{.EntityName}}) *pb.Get{{.EntityName}}Response {
+	return &pb.Get{{.EntityName}}Response{
+		Id: entity.ID,
+		// TODO: 填充其他字段
+		CreatedAt: entity.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: entity.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+// toProtoItem 转换为 Proto 列表项
+func (s *{{.EntityName}}Service) toProtoItem(entity *model.{{.EntityName}}) *pb.{{.EntityName}} {
+	return &pb.{{.EntityName}}{
+		Id: entity.ID,
+		// TODO: 填充其他字段
+	}
+}
