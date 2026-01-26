@@ -570,6 +570,110 @@ REST 请求 → APISIX 转码 → gRPC 调用 → 微服务处理
 - 本地与生产环境一致
 - 方便快速部署
 
+### 6. 安全认证架构
+- **JWT 认证**：APISIX 网关层保护公共接口
+- **接口分离**：公共接口和内部接口分离设计
+
+---
+
+## 🔐 安全认证架构
+
+本框架实现了安全认证机制：
+
+### 1. APISIX 网关层 JWT 认证
+
+**用途**：保护通过 APISIX 暴露的公共接口
+
+**工作原理**：
+1. 用户登录后获取 JWT Token
+2. 后续请求在 Header 中携带 Token：`Authorization: Bearer <token>`
+3. APISIX 验证 Token 有效性
+4. 验证通过后转发请求到后端服务
+
+**配置方式**：
+- JWT Consumer 在部署时自动创建（`make update-apisix-merge`）
+- JWT Secret 通过环境变量 `APISIX_JWT_SECRET` 配置
+- 路由配置中通过 `jwt-auth: {}` 插件启用认证
+
+**重要提示**：
+- 如果之前部署过没有 JWT 认证的路由，需要先清理旧路由
+- 运行 `./scripts/cleanup-old-routes.sh` 清理旧路由配置
+- 或者手动删除：`curl -X DELETE http://localhost:9180/apisix/admin/routes/<route-name> -H "X-API-KEY: <admin-key>"`
+
+**公开接口**（不需要 JWT）：
+- `/api/v1/users/register` - 用户注册
+- `/api/v1/users/login` - 用户登录
+
+**受保护接口**（需要 JWT）：
+- `/api/v1/users/*` - 获取/更新用户信息
+- `/api/v1/orders/*` - 订单相关操作
+- `/api/v1/feeds/*` - 动态相关操作
+
+**使用示例**：
+```bash
+# 1. 登录获取 Token
+TOKEN=$(curl -X POST http://localhost:9080/api/v1/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"test","password":"123"}' | jq -r '.token')
+
+# 2. 使用 Token 访问受保护接口
+curl -X GET http://localhost:9080/api/v1/users/1 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**重要说明**：
+- `consumer_key` 是 APISIX 内部标识符，用于匹配 JWT token 中的 `key` 字段
+- 微服务生成 JWT token 时，payload **必须包含** `"key": "user_key"` 字段
+- 微服务从 gRPC metadata 中获取用户信息（参见 [JWT 认证流程文档](docs/JWT-AUTH-FLOW.md)）
+
+**为什么需要 `key` 字段？**
+- APISIX 使用 token payload 中的 `key` 字段来查找对应的 Consumer
+- 然后使用该 Consumer 的 `secret` 来验证 token 签名
+- 如果不包含 `key` 字段，APISIX 无法知道用哪个 Consumer 来验证，认证会失败
+
+详细文档：
+- [consumer_key 作用详解](docs/CONSUMER-KEY-EXPLANATION.md) - **强烈推荐阅读**，解释 `user_key` 的作用
+- [JWT 认证流程](docs/JWT-AUTH-FLOW.md) - 完整的 JWT 认证流程和代码示例
+
+### 2. 公共接口 vs 内部接口分离
+
+**设计原则**：
+- **公共接口**：通过 APISIX 暴露，使用 JWT 认证，供客户端调用
+- **内部接口**：不通过 APISIX，直接 gRPC 调用，供服务间调用（内网安全，无需额外认证）
+
+**实现方式**：
+- 使用不同的 proto 文件：`user.proto`（公共）和 `user-internal.proto`（内部）
+- 公共接口在路由配置中注册，内部接口不在 APISIX 路由中
+- 内部接口只能通过直接 gRPC 连接访问
+
+**示例**：
+```protobuf
+// user.proto - 公共接口
+service UserService {
+  rpc Register(...) returns (...);  // 通过 APISIX 访问
+  rpc Login(...) returns (...);      // 通过 APISIX 访问
+  rpc GetUser(...) returns (...);    // 通过 APISIX 访问（需要 JWT）
+}
+
+// user-internal.proto - 内部接口
+service UserInternalService {
+  rpc BatchGetUsers(...) returns (...);  // 直接 gRPC 调用（内网安全）
+  rpc ValidateUserPermission(...) returns (...);  // 直接 gRPC 调用
+}
+```
+
+详细文档：参见 [docs/INTERFACE-SEPARATION.md](docs/INTERFACE-SEPARATION.md)
+
+### 测试认证功能
+
+运行测试脚本：
+```bash
+./examples/auth/test_auth.sh
+```
+
+该脚本会测试：
+- JWT 认证（注册、登录、访问受保护接口）
+
 ---
 
 ## 🎓 深入学习

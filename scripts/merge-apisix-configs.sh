@@ -20,6 +20,7 @@ NC='\033[0m' # No Color
 GATEWAY_URL="${APISIX_ADMIN_URL:-http://localhost:9180}"
 ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
 ENV="${APISIX_ENV:-dev}"
+JWT_SECRET="${APISIX_JWT_SECRET:-your-secret-key-change-in-production}"
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -164,6 +165,55 @@ extract_json_field() {
     fi
 }
 
+# 创建 JWT Consumer
+# 在 APISIX 中创建 JWT Consumer，用于 JWT 认证
+#
+# consumer_key 说明：
+# - 这是 APISIX Consumer 的标识符，用于匹配 JWT token payload 中的 "key" 字段
+# - 不是传递给微服务的 key，而是 APISIX 内部用于验证 token 的标识符
+# - 微服务生成 JWT token 时，payload 必须包含 "key": "user_key" 字段
+# - 微服务从 gRPC metadata 中获取用户信息（X-Consumer-Username 或解析 JWT token）
+#
+# 详细说明：参见 docs/JWT-AUTH-FLOW.md
+create_jwt_consumer() {
+    local consumer_key="user_key"
+    local secret="${JWT_SECRET}"
+    
+    echo "创建 JWT Consumer: ${consumer_key}"
+    
+    local consumer_config=$(cat <<EOF
+{
+  "username": "${consumer_key}",
+  "plugins": {
+    "jwt-auth": {
+      "key": "${consumer_key}",
+      "secret": "${secret}",
+      "algorithm": "HS256"
+    }
+  }
+}
+EOF
+)
+    
+    local response=$(curl -s -X PUT "${GATEWAY_URL}/apisix/admin/consumers/${consumer_key}" \
+        -H "X-API-KEY: ${ADMIN_KEY}" \
+        -H "Content-Type: application/json" \
+        -d "${consumer_config}")
+    
+    if echo "$response" | grep -q '"key"'; then
+        echo -e "  ${GREEN}✓ JWT Consumer 创建成功${NC}"
+        return 0
+    else
+        if echo "$response" | grep -q "already exists\|duplicate"; then
+            echo -e "  ${GREEN}✓ JWT Consumer 已存在${NC}"
+            return 0
+        else
+            echo -e "  ${YELLOW}⚠ JWT Consumer 创建失败（非致命）: $response${NC}"
+            return 1
+        fi
+    fi
+}
+
 # 创建路由
 create_route() {
     local route_json=$1
@@ -176,6 +226,7 @@ create_route() {
     
     echo "创建路由: ${route_name}"
     
+    # 使用 PUT 方法会完全替换路由配置，确保 jwt-auth 插件正确应用
     local response=$(curl -s -X PUT "${GATEWAY_URL}/apisix/admin/routes/${route_name}" \
         -H "X-API-KEY: ${ADMIN_KEY}" \
         -H "Content-Type: application/json" \
@@ -249,23 +300,34 @@ main() {
     check_dependencies
     wait_for_apisix
     
+    # 0. 创建 JWT Consumer（如果启用 JWT 认证）
+    echo -e "\n${GREEN}步骤 0: 创建 JWT Consumer${NC}"
+    create_jwt_consumer
+    
     # 1. 创建 Proto 定义
     echo -e "\n${GREEN}步骤 1: 创建 Proto 定义${NC}"
     SERVICES_DIR="${PROJECT_ROOT}/services"
     
-    # 定义服务到 proto_id 的映射（固定映射，不受服务发现顺序影响）
+    # 获取服务对应的 proto_id（固定映射，不受服务发现顺序影响）
     # 这确保即使某些 proto 文件缺失，proto_id 也始终对应正确的服务
-    declare -A PROTO_ID_MAP=(
-        ["user"]=1
-        ["order"]=2
-        ["feed"]=3
-    )
+    get_proto_id() {
+        case "$1" in
+            user) echo "1" ;;
+            order) echo "2" ;;
+            feed) echo "3" ;;
+            *) echo "" ;;
+        esac
+    }
     
     # 从 services/ 目录下的各个微服务中查找 proto 文件
     if [ -d "$SERVICES_DIR" ]; then
-        # 按照固定顺序处理所有服务（使用映射关键字）
-        for service_name in "${!PROTO_ID_MAP[@]}"; do
-            local proto_id=${PROTO_ID_MAP[$service_name]}
+        # 按照固定顺序处理所有服务
+        for service_name in user order feed; do
+            local proto_id=$(get_proto_id "$service_name")
+            if [ -z "$proto_id" ]; then
+                continue
+            fi
+            
             local service_dir="${SERVICES_DIR}/${service_name}"
             local proto_file="${service_dir}/proto/${service_name}.proto"
             

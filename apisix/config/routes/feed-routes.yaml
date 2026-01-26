@@ -1,5 +1,5 @@
 # Feed Service 路由配置
-# 自动生成于: Sat Jan 24 15:04:04 CST 2026
+# 自动生成于: Mon Jan 26 13:58:25 CST 2026
 # Proto 文件: services/feed//proto/feed.proto
 # 注意: 这是自动生成的模板，请根据实际需求手动调整
 
@@ -13,6 +13,7 @@ routes:
         "feed-service:50053": 1
       scheme: grpc
     plugins:
+      jwt-auth: {}
       grpc-transcode:
         proto_id: "3"
         service: feed.FeedService
@@ -32,6 +33,7 @@ routes:
         "feed-service:50053": 1
       scheme: grpc
     plugins:
+      jwt-auth: {}
       grpc-transcode:
         proto_id: "3"
         service: feed.FeedService
@@ -51,6 +53,7 @@ routes:
         "feed-service:50053": 1
       scheme: grpc
     plugins:
+      jwt-auth: {}
       grpc-transcode:
         proto_id: "3"
         service: feed.FeedService
@@ -70,6 +73,7 @@ routes:
         "feed-service:50053": 1
       scheme: grpc
     plugins:
+      jwt-auth: {}
       grpc-transcode:
         proto_id: "3"
         service: feed.FeedService
@@ -89,6 +93,7 @@ routes:
         "feed-service:50053": 1
       scheme: grpc
     plugins:
+      jwt-auth: {}
       grpc-transcode:
         proto_id: "3"
         service: feed.FeedService

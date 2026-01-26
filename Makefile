@@ -1,4 +1,4 @@
-.PHONY: proto proto-update update-apisix-merge generate-route validate-config clean build run stop restart logs help
+.PHONY: proto proto-update update-apisix-merge generate-route validate-config cleanup-old-routes clean build run stop restart logs help
 
 # 帮助信息
 help:
@@ -7,6 +7,7 @@ help:
 	@echo "APISIX 配置管理:"
 	@echo "  make update-apisix-merge - 合并并更新 APISIX 配置（从 apisix/config/routes/ 读取）"
 	@echo "  make validate-config     - 验证 APISIX 配置"
+	@echo "  make cleanup-old-routes  - 清理旧路由（没有 jwt-auth 的路由）"
 	@echo ""
 	@echo "本地开发（如果 services/ 目录有微服务代码）:"
 	@echo "  make proto               - 生成所有微服务的 Proto 代码文件"
@@ -153,6 +154,11 @@ generate-route:
 validate-config:
 	@echo "验证 APISIX 配置..."
 	@./scripts/validate-config.sh
+
+# 清理旧路由配置（没有 jwt-auth 插件的路由）
+cleanup-old-routes:
+	@echo "清理旧路由配置..."
+	@./scripts/cleanup-old-routes.sh
 
 # 构建所有服务（自动遍历本地 services/ 目录中的微服务）
 build:

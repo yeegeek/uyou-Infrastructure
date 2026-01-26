@@ -137,36 +137,45 @@ generate_route_config() {
     # 根据方法名生成 URI 和 HTTP 方法
     local uri=""
     local http_method="POST"
+    local require_auth=false
     
     case "$method_name" in
         Register|Create*)
             uri="${API_PREFIX}"
             if [[ "$method_name" == *"Register"* ]]; then
                 uri="${API_PREFIX}/register"
+                require_auth=false  # 注册接口不需要认证
+            else
+                require_auth=true   # 其他创建接口需要认证
             fi
             http_method="POST"
             ;;
         Login)
             uri="${API_PREFIX}/login"
             http_method="POST"
+            require_auth=false  # 登录接口不需要认证
             ;;
         Get*|List*)
             uri="${API_PREFIX}/*"
             http_method="GET"
+            require_auth=true   # 查询接口需要认证
             ;;
         Update*)
             uri="${API_PREFIX}/*"
             http_method="PUT"
+            require_auth=true   # 更新接口需要认证
             ;;
         Delete*)
             uri="${API_PREFIX}/*"
             http_method="DELETE"
+            require_auth=true   # 删除接口需要认证
             ;;
         *)
             # 将方法名转换为小写（兼容性处理）
             method_name_lower=$(echo "$method_name" | tr '[:upper:]' '[:lower:]')
             uri="${API_PREFIX}/${method_name_lower}"
             http_method="POST"
+            require_auth=true   # 默认需要认证
             ;;
     esac
     
@@ -184,7 +193,7 @@ generate_route_config() {
       nodes:
         "${SERVICE_HOST}:${SERVICE_PORT}": 1
       scheme: grpc
-    plugins:
+    plugins:$(if [ "$require_auth" = true ]; then echo -e "\n      jwt-auth: {}"; fi)
       grpc-transcode:
         proto_id: "${PROTO_ID}"
         service: ${SERVICE_PACKAGE}.$(echo "$SERVICE_NAME" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')Service
